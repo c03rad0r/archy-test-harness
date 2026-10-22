@@ -1,0 +1,14 @@
+# Critical — the release-relevant subset. Minutes, not seconds.
+#
+# Same selection strategy as smoke: PATHS choose, MARKERS only exclude. Everything the CDN
+# deliverables must not regress, across every venue available on this box. Tests whose venue
+# is unavailable are reported NOT_VERIFIED (and FAILED when marked `required`), so a green
+# critical run means "verified", not "did not crash".
+venue: inprocess
+markers:
+  - not extended
+paths:
+  - tests/unit
+  - tests/inprocess
+  - tests/media
+timeout: 600

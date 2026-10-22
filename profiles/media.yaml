@@ -1,0 +1,19 @@
+# Media — the reason this repo exists.
+#
+# The media path: seller serve, buyer proxy, range/resume, the 900 s deadline, the
+# per-chunk rental window. Split by venue because the halves have different prerequisites:
+#
+#   inprocess  — deny paths, rental-window logic with an injected clock. Always runnable.
+#   localnode  — wire behaviour of server.rs (listener, semaphore, path filter, deadline).
+#                Needs a built binary.
+#   twonode    — the buyer proxy against a real seller over FIPS. BLOCKED (see docs/BLOCKERS.md).
+#   hardware   — a real installed IndeeHub app. BLOCKED.
+#
+# Default venue is inprocess so `--profile media` never fails for an infrastructure reason.
+# Run the wider lanes explicitly:  --profile media --venue localnode
+venue: inprocess
+markers:
+  - media
+paths:
+  - tests/media
+timeout: 300

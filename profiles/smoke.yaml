@@ -1,0 +1,15 @@
+# Smoke — seconds. The run a human does before trusting a branch.
+#
+# Selection strategy: PATHS choose the directories, MARKERS only exclude expensive work.
+# This matters — an earlier version selected on `-m smoke`, which silently skipped every
+# unmarked unit test (32 of them) while reporting exit 0. A profile that can collect zero
+# tests and pass is the exact failure this harness exists to prevent, so:
+#   * tests/unit and tests/inprocess are always selected here;
+#   * `not extended` is the only marker filter, so nothing is excluded by omission.
+venue: inprocess
+markers:
+  - not extended
+paths:
+  - tests/unit
+  - tests/inprocess
+timeout: 60
