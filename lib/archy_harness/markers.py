@@ -49,11 +49,16 @@ class Outcome(str, enum.Enum):
 #: Family 1 — what the test needs. These gate on a capability probe; a miss on a
 #: `required` test becomes NOT_VERIFIED.
 VENUE_MARKERS = {
+    "venue_any": "pure logic; runs on ANY venue (no node, no network)",
     "venue_inprocess": "needs only in-process ApiHandler (no listener)",
     "venue_localnode": "needs the real binary listening on loopback",
     "venue_twonode": "needs two nodes joined over FIPS",
     "venue_hardware": "needs a real installed Archipelago box (podman + apps)",
 }
+
+#: Venues that may legitimately host a `venue_any` test. All of them: the point of the
+#: marker is that the test needs nothing, so restricting it to one venue is wrong.
+SUPERSET_VENUES = frozenset({"venue_any"})
 
 #: Family 2 — seriousness / cost. These select profiles; they never skip on their own.
 TIER_MARKERS = {
@@ -119,6 +124,13 @@ def gate(marker_names: set[str]) -> GateResult:
     declared = sorted(
         m for m in marker_names if m in VENUE_MARKERS
     )
+
+    # A pure-logic test needs nothing, so it runs on every venue. Without this, selecting
+    # a wider venue (e.g. `--venue localnode`) would FAIL every `venue_inprocess` test —
+    # a false failure caused by the harness, not by the code under test.
+    if declared == ["venue_any"]:
+        return GateResult(allowed=True, outcome=None)
+
     if len(declared) > 1:
         return GateResult(
             allowed=False,

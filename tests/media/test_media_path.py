@@ -90,7 +90,7 @@ def test_cache_key_uses_the_hash_pair_never_content_id():
 @pytest.mark.critical
 @pytest.mark.regression
 @pytest.mark.required
-@pytest.mark.venue_inprocess
+@pytest.mark.venue_any
 def test_the_900s_deadline_does_not_apply_to_media_routes():
     """P3's contract, asserted on the predicate the fix will introduce.
 
@@ -150,7 +150,7 @@ def test_peer_path_allowlist_is_exact_not_prefix_loose():
 @pytest.mark.critical
 @pytest.mark.regression
 @pytest.mark.required
-@pytest.mark.venue_inprocess
+@pytest.mark.venue_any
 def test_per_subscriber_rental_window_is_still_enforced_mid_stream():
     """The named regression guard D1 must carry.
 
