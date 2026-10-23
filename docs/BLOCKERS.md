@@ -58,22 +58,51 @@ requirement.
 
 ## B3 — No HTTP-level harness for the daemon
 
-**Status: PARTIAL.** Affects P3 specifically.
+**Status: MOSTLY RESOLVED (corrected 2026-10-23). The old text here was wrong, and the
+way it was wrong matters.**
 
-`Config::load()` reads only `/etc/archipelago/config.toml` (`config.rs:114`).
-`ARCHIPELAGO_CONFIG` is set by an existing test (`rpc_integration.rs:73`) but **ignored**, and
-`ARCHIPELAGO_DEV_MODE` is deliberately ignored (`config.rs:147-149`).
+The previous claim was that there was no way to start the real `Server` with a fixture
+config, so the `localnode` venue could not run it and P3 was unverifiable. That was
+measured again and is **false**:
 
-So there is no way to start `Server` in a test with a fixture config. The workable in-process
-path is `ApiHandler::new` + `handle_request` (proven at `rental_playback.rs:507-547`), which
-**bypasses the listener, the 1024-permit semaphore, the v6 mirror and the path filter**.
+- **`ARCHIPELAGO_DATA_DIR` IS honoured** — `config.rs:125`
+  (`if let Ok(data_dir) = std::env::var("ARCHIPELAGO_DATA_DIR")`). Related overrides also
+  honoured: `ARCHIPELAGO_BIND` (`:129`), `ARCHIPELAGO_LOG_LEVEL` (`:139`),
+  `ARCHIPELAGO_CONTAINER_RUNTIME` (`:151`), `ARCHIPELAGO_PORT_OFFSET` (`:155`).
+- `ARCHIPELAGO_CONFIG` is genuinely ignored (`Config::load()` reads only
+  `/etc/archipelago/config.toml`, `config.rs:114`) — that part stands.
+- `ARCHIPELAGO_DEV_MODE` at `config.rs:147-149` is **not** "deliberately ignored"; it is
+  read and applied. The `:165` entry is `ARCHIPELAGO_DEV_DATA_DIR`.
 
-**Consequence for the CDN plan:** P3's fix lives in `server.rs` (the 900 s watchdog). No
-in-process test can verify it. **P3 is only verifiable on the `localnode` venue or higher**,
-and the plan must say so rather than accepting a unit test as proof.
+Observed: the real release binary starts, binds, and serves with only env overrides —
 
-`proc.py` starts the real binary, but cannot yet point it at a private config — see
-`docs/VENUES.md` for what that means for the `localnode` venue.
+    ARCHIPELAGO_DATA_DIR=<tmp> ARCHIPELAGO_BIND=127.0.0.1:<port> ARCHIPELAGO_DEV_MODE=1 \
+        core/target/release/archipelago
+    → "Data directory: <tmp>", writes <tmp>/archipelago.pid
+    → GET /health → HTTP 200
+    → GET /content/... → HTTP 404 (route reachable and answering, not refused)
+
+**How the wrong claim survived:** the first read-back attempt did not set the override,
+got `Failed to write PID marker / Permission denied` against the hardcoded
+`/var/lib/archipelago`, and that result was written up as an environment blocker. The
+blocker was the caller. A claimed blocker is an assertion too — it needs the same
+observed command as any other claim.
+
+**What still genuinely blocks startup:** a container runtime. Without podman/docker the
+node stops at `Error: Failed to create auto runtime / Caused by: Neither Podman nor
+Docker is available`. Install podman (Ubuntu 24.04 candidate 4.9.3; verified working).
+Note the isolation implication: check whether the host is a real archy node before
+installing app dependencies — `/var/lib/archipelago` absent and 0 archy systemd units
+means it is not.
+
+**What is STILL not achievable, and this is the real residue of B3:** the layer above the
+listener is reachable now, but there is no way to *fixture a purchase*, so an actual
+media **body** cannot be produced. Wire-level reachability is provable; media
+**duration** (P3's literal criterion, >900 s) still needs a real purchased stream. Report
+the distinction rather than collapsing it.
+
+Venue status after the correction: `inprocess`, `localnode` and `hardware` available;
+`twonode` missing (FIPS DNS 127.0.0.1:5354 not answering).
 
 ---
 
