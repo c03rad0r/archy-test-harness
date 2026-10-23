@@ -19,6 +19,9 @@ regress. Those report FAILED — NOT VERIFIED when their venue is missing, which
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import pytest
 
 from archy_harness import venue
@@ -92,34 +95,69 @@ def test_cache_key_uses_the_hash_pair_never_content_id():
 @pytest.mark.required
 @pytest.mark.venue_any
 def test_the_900s_deadline_does_not_apply_to_media_routes():
-    """P3's contract, asserted on the predicate the fix will introduce.
+    """P3's contract, asserted against the SUT SOURCE, not against a local copy.
 
-    The SUT already has the mechanism: `server.rs:1604` creates
-    `Arc<AtomicBool> upgraded`, `:1608` sets it from the request headers, and the watchdog
-    at `:1645-1662` checks `!upgraded.load(...)`. So the fix is a second flag of the same
-    shape keyed off the request URI — not a per-route deadline rewrite.
+    This test previously defined its own `is_media_path()` and asserted on that. It passed
+    on a pristine tree — it was a mirror of the contract, not a check of the SUT, so it
+    could never have caught the bug it names. A test that cannot fail for the reason it
+    exists is worse than no test: it reports green and is believed.
 
-    BOTH prefixes are required. `/content/` is the seller serve
-    (`api/rpc/content.rs:525`); `/api/rental-playback/` is the buyer proxy
-    (`api/rpc/playback.rs:222`) and streams for the same duration. Exempting only
-    `/content/` leaves the route a viewer actually hits dead at 15 minutes.
+    So it now reads the SUT and requires the real predicate to exist and to exempt BOTH
+    prefixes. On pristine `fcc18b3` there is no such function and this FAILS.
+
+    BOTH prefixes are required. `/content/` is the seller serve; `/api/rental-playback/` is
+    the buyer proxy (`api/rpc/playback.rs:222`) and streams for the same duration.
+    Exempting only `/content/` leaves the route a viewer actually hits dead at 15 minutes.
+
+    What this CANNOT show: that a connection actually survives past 900 s. That is a
+    wall-clock property of the listener, not of the source. See docs/BLOCKERS.md.
     """
+    sut = os.environ.get("ARCHY_SUT", "")
+    if not sut:
+        pytest.fail("ARCHY_SUT must be set; this test reads the SUT source")
 
-    MEDIA_PREFIXES = ("/content/", "/api/rental-playback/")
+    server_rs = Path(sut).expanduser() / "core/archipelago/src/server.rs"
+    if not server_rs.is_file():
+        pytest.fail(f"SUT source not found at {server_rs}")
 
-    def is_media_path(path: str) -> bool:
-        return any(path.startswith(prefix) for prefix in MEDIA_PREFIXES)
+    src = server_rs.read_text()
 
-    assert is_media_path("/content/abc123")
-    assert is_media_path("/api/rental-playback/handle-xyz")
-    assert not is_media_path("/rpc/v1")
-    assert not is_media_path("/contention"), "prefix match must not leak (server.rs:2414-2443)"
-
-    # The buyer route is the one a viewer hits. If this assertion ever fails, the fix has
-    # been narrowed to the seller side and the product is still broken.
-    assert is_media_path("/api/rental-playback/x"), (
-        "exempting only /content/ fixes the seller and leaves the buyer truncated at 900 s"
+    # 1. the predicate must exist and be public (it is the seam the fix introduces)
+    fn_start = src.find("pub fn is_media_stream_path")
+    assert fn_start != -1, (
+        "P3 not implemented: no `pub fn is_media_stream_path` in server.rs. "
+        "A pristine fcc18b3 fails here — that is the point of this test."
     )
+
+    # 2. extract its body (up to the closing brace of the fn)
+    body_start = src.index("{", fn_start)
+    depth, i = 0, body_start
+    while i < len(src):
+        if src[i] == "{":
+            depth += 1
+        elif src[i] == "}":
+            depth -= 1
+            if depth == 0:
+                break
+        i += 1
+    body = src[body_start : i + 1]
+
+    assert "/content/" in body, "seller-side serve prefix missing from the predicate"
+    assert "/api/rental-playback/" in body, (
+        "buyer proxy prefix missing: exempting only /content/ fixes the seller and "
+        "leaves the viewer route truncated at 900 s"
+    )
+
+    # 3. the watchdog must actually consult the media flag, or the predicate is dead code
+    watchdog = src[src.find("let watchdog = async"):]
+    watchdog = watchdog[: watchdog.find("tokio::select!")] if "tokio::select!" in watchdog else watchdog
+    assert "media.load" in watchdog, (
+        "the media flag is set but never consulted by the watchdog — the exemption is "
+        "dead code and media still dies at 900 s"
+    )
+
+    # 4. the bare catalog path must stay bounded (JSON exchange, not a stream)
+    assert '"/content"' not in body or "starts_with" in body, "unexpected predicate shape"
 
 
 @pytest.mark.smoke
