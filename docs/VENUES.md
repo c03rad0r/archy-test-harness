@@ -80,6 +80,30 @@ permitted (`dial.rs:683-689`).
 A real installed Archipelago box (rootless podman + apps). Blocked by B2: the seller serve
 route requires a real `Running` `indeedhub-api` app.
 
+### `iso` — available now
+
+A **built installer image**, read as an artefact. This is the only venue where nothing runs:
+the ISO is the thing under test. Set `ARCHY_ISO` to a built image; `xorriso` must be
+installed.
+
+It exists because two defects shipped past a green suite — a daemon version bumped in
+source but absent from the image, and a systemd unit masked by a static test on the builder
+but not inside the artefact that would have been flashed. Reading the image's own root
+filesystem and dpkg database closes that gap.
+
+**Can assert:** which packages the image ships and at what version (per its own
+`var/lib/dpkg/status`), which systemd units are masked or enabled, that the image has both
+El Torito BIOS and UEFI boot entries, that the image matches its `.sha256` sidecar.
+
+**Cannot assert:** any runtime behaviour. Nothing executes here. In particular it says
+nothing about whether the daemon *starts* — on a fresh install it deliberately does not,
+because `archipelago-fips.service` is gated on the key that onboarding creates. See
+[`INSTALLER-CONSTRAINTS.md`](INSTALLER-CONSTRAINTS.md).
+
+Booting the image is deliberately **not** a pytest lane: it needs KVM, a SATA scratch disk
+larger than 30 GiB, and three interactive keypresses. That is
+`scripts/vm-boot-installer.sh`.
+
 ## Adding a venue
 
 1. Add a `VenueSpec` to `VENUES` in `lib/archy_harness/venue.py`, with honest

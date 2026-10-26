@@ -1,0 +1,24 @@
+# ISO — the delivered artefact, not the build log.
+#
+# Two lanes with different prerequisites:
+#
+#   constraints — static assertions against the SUT's builder, plus the installer rules
+#                 discovered by booting it. Run anywhere; seconds. `venue_any`.
+#   artifact    — reads a *built* ISO: does it carry the pinned daemon, is the packaged
+#                 unit masked, is the wrapper enabled. Needs ARCHY_ISO + xorriso.
+#
+# There is deliberately no boot lane here. Booting the image needs KVM, a SATA scratch
+# disk of >30 GiB, and three interactive keypresses (see docs/INSTALLER-CONSTRAINTS.md);
+# that belongs in a script (scripts/vm-boot-installer.sh), not in a pytest run that would
+# spend twelve minutes and produce a PPM nobody reads.
+#
+#   export ARCHY_SUT=~/repos/archy
+#   export ARCHY_ISO=/path/to/archipelago-installer-*.iso
+#   export ARCHY_FIPS_VERSION=0.5.3      # optional; asserts the pinned version
+venue: iso
+markers:
+  - venue_iso
+  - regression
+paths:
+  - tests/iso
+timeout: 1800

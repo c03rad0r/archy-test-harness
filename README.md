@@ -48,11 +48,20 @@ the venue exports a connection contract as environment variables.
 | `localnode` | The real `archipelago` binary on loopback, private data dir | a built binary | implemented (see limits) |
 | `twonode` | Two processes joined over FIPS | FIPS daemons on both ends | **not implemented — blocked** |
 | `hardware` | A real installed Archipelago box | rootless podman + apps | **not implemented — blocked** |
+| `iso` | A **built installer image**, read as an artefact | `ARCHY_ISO` + `xorriso` | implemented |
 
 `inprocess` and `localnode` are the workhorses. `twonode` and `hardware` are declared so
 the taxonomy is complete and so a test can declare what it needs — but they raise
 `VenueUnavailable` rather than pretending. See
 [`docs/VENUES.md`](docs/VENUES.md) and [`docs/BLOCKERS.md`](docs/BLOCKERS.md).
+
+`iso` is the odd one: nothing runs on it. The image is the thing under test, because two
+defects have already shipped past a green suite — a daemon version bumped in source but
+absent from the image, and a systemd unit masked in a static test but not in the artefact.
+It reads the shipped root filesystem and its own dpkg database, so it asserts what the
+image *contains*, not what the build log claimed. Booting is a separate concern: see
+[`docs/INSTALLER-CONSTRAINTS.md`](docs/INSTALLER-CONSTRAINTS.md) and
+`scripts/vm-boot-installer.sh`.
 
 **Liveness is a TCP connect, never ICMP.** Learned from PRTA the hard way.
 
@@ -144,6 +153,7 @@ tests/
   inprocess/      # ApiHandler in-process (fast, broad)
   live/           # the real binary on loopback
   media/          # the media path (the reason this repo exists)
+  iso/            # the built installer image: contents, wiring, installer constraints
 profiles/         # YAML: name -> marker selection + venue + budget
 scripts/          # the canonical entry points
 docs/             # venues, blockers, PRTA provenance, writing-a-test

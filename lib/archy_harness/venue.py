@@ -151,6 +151,23 @@ def _probe_podman() -> tuple[bool, str, str]:
     return True, "", ""
 
 
+def _probe_iso() -> tuple[bool, str, str]:
+    """A built installer image to read, and the tool to read it with."""
+    raw = os.environ.get("ARCHY_ISO")
+    if not raw:
+        return (
+            False,
+            "ARCHY_ISO is not set",
+            "export ARCHY_ISO=/path/to/archipelago-installer-*.iso",
+        )
+    path = Path(raw).expanduser()
+    if not path.is_file():
+        return False, f"ARCHY_ISO={path} does not exist", "point it at a built installer image"
+    if not shutil.which("xorriso"):
+        return False, "xorriso is not installed", "apt-get install xorriso"
+    return True, "", ""
+
+
 # --------------------------------------------------------------------------------------
 # the venue table — one entry per venue, each with its capabilities and its 4 verbs
 # --------------------------------------------------------------------------------------
@@ -216,6 +233,25 @@ VENUES: dict[str, VenueSpec] = {
         ),
         cannot_assert=("nothing yet — not implemented",),
         probe=_probe_podman,
+    ),
+    "iso": VenueSpec(
+        name="iso",
+        description=(
+            "A built installer image, read as an artefact (ARCHY_ISO). No node is running; "
+            "the ISO itself is the thing under test."
+        ),
+        can_assert=(
+            "which packages the image actually ships, per its own dpkg database",
+            "the daemon version embedded in the root filesystem",
+            "systemd wiring: which unit is masked, which is enabled",
+            "the image boots at all (El Torito BIOS + UEFI entries, sha256 vs sidecar)",
+        ),
+        cannot_assert=(
+            "any runtime behaviour: nothing executes on this venue",
+            "whether the daemon starts — that needs a booted node and onboarding, "
+            "see docs/INSTALLER-CONSTRAINTS.md",
+        ),
+        probe=_probe_iso,
     ),
 }
 

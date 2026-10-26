@@ -54,6 +54,7 @@ VENUE_MARKERS = {
     "venue_localnode": "needs the real binary listening on loopback",
     "venue_twonode": "needs two nodes joined over FIPS",
     "venue_hardware": "needs a real installed Archipelago box (podman + apps)",
+    "venue_iso": "needs a built installer ISO (ARCHY_ISO) and xorriso to read it",
 }
 
 #: Venues that may legitimately host a `venue_any` test. All of them: the point of the
