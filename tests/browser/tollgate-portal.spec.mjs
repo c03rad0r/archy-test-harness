@@ -1,3 +1,17 @@
+// SCOPE OF WHAT A PASS MEANS
+// --------------------------
+// This spec proves the portal, as served by a real 0.6.0 router, renders a
+// live offer and completes at least one 200 against its backend on :2121.
+// It does NOT by itself prove a *paying-zone client* can reach :2121 — that
+// is decided by nftables/nDS and is asserted structurally in
+// tests/e2e/test_tollgate_paid_bridge_api.py.
+//
+// Do not run this through an SSH tunnel to the router and call it evidence:
+// NoDogSplash refuses non-client sources, answering 500 for the portal and
+// making the backend call untestable. Observed on a GL-MT3000: every path
+// (/, /splash.html, /splash.html?redir=...) returned 500 from a tunnel while
+// an associated client got 200. The run must originate from a real client on
+// the paid SSID.
 // TollGate captive portal — proves the paid portal served by the router renders
 // and is usable, with a video a human can watch instead of taking a report's word.
 //
@@ -17,6 +31,23 @@ const PORTAL = process.env.TOLLGATE_PORTAL_URL ?? 'http://192.168.99.1:2050';
 
 test.describe('TollGate captive portal', () => {
   test('renders the portal the router actually serves', async ({ page }) => {
+    // The SPA fetches its offer from the backend on :2121. A price can be
+    // rendered from configuration alone, so a rendered number does not prove
+    // the backend answered. Record the actual responses and require a 200.
+    const apiCalls = [];
+    page.on('response', (res) => {
+      const url = res.url();
+      if (/:2121\b/.test(url) || url.includes(':2121/')) {
+        apiCalls.push({ url, status: res.status() });
+      }
+    });
+    page.on('requestfailed', (req) => {
+      if (req.url().includes(':2121')) {
+        apiCalls.push({ url: req.url(), status: 0,
+                        failure: req.failure()?.errorText || 'failed' });
+      }
+    });
+
     const resp = await page.goto(PORTAL, { waitUntil: 'domcontentloaded' });
     expect(resp, 'portal must answer').not.toBeNull();
 
@@ -67,6 +98,17 @@ test.describe('TollGate captive portal', () => {
       /pay|purchase|connect|buy/i.test(settled),
       `portal shows no payment/access affordance. Rendered text:\n${settled}`,
     ).toBe(true);
+
+    // Finally: the portal must have actually reached its backend. Without
+    // this the suite blesses a portal that renders a configured price while
+    // every real API call is dropped - the exact defect that hid on hardware.
+    const ok = apiCalls.filter((c) => c.status === 200);
+    expect(
+      ok.length,
+      `portal rendered an offer but no successful call to the backend on :2121 ` +
+        `(the number may be a configured default, not a live quote).\n` +
+        `observed: ${JSON.stringify(apiCalls, null, 2)}`,
+    ).toBeGreaterThan(0);
   });
 
   test('serves its SPA bundle without a console error', async ({ page }) => {
