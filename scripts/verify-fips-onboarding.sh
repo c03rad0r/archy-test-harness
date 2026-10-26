@@ -13,6 +13,28 @@ set -uo pipefail
 EXPECT_VERSION="${ARCHY_FIPS_VERSION:-0.5.3}"
 FAILED=0
 
+# The backend creates the identity key and starts the wrapper asynchronously after
+# the wizard's "Set up Node" click. Verifying immediately therefore races it: the
+# first fresh-install run reported "identity key missing / not active" on a node
+# that was healthy moments later (observed 2026-10-26 — same disk, same script,
+# PASS with 2 peers once the daemon had come up).
+#
+# So wait, bounded, for the state that is supposed to appear. This is not a retry
+# of a failing assertion: nothing is asserted until the window expires.
+WAIT="${ARCHY_ONBOARD_WAIT:-120}"
+echo "=== waiting up to ${WAIT}s for onboarding to take effect ==="
+waited=0
+while [ "$waited" -lt "$WAIT" ]; do
+    if [ -f /var/lib/archipelago/identity/fips_key ] \
+       && [ "$(systemctl is-active archipelago-fips 2>/dev/null)" = "active" ]; then
+        echo "ready after ${waited}s"
+        break
+    fi
+    sleep 5
+    waited=$((waited + 5))
+done
+[ "$waited" -lt "$WAIT" ] || echo "window expired after ${waited}s — asserting what is there"
+
 check() {
     local name="$1"; shift
     if "$@" >/dev/null 2>&1; then echo "PASS: $name"; else echo "FAIL: $name"; FAILED=1; fi
@@ -51,6 +73,17 @@ case "$got" in
 esac
 
 echo "=== mesh ==="
+# Mesh convergence is slower than daemon start: the node must dial rendezvous and
+# authenticate. Wait bounded for a *connected* peer before treating its absence as
+# a failure — otherwise a healthy node on a slow network reads as broken.
+peer_waited=0
+while [ "$peer_waited" -lt "$WAIT" ]; do
+    if fipsctl show peers 2>/dev/null | grep -q '"connectivity": *"connected"'; then
+        break
+    fi
+    sleep 5
+    peer_waited=$((peer_waited + 5))
+done
 peers_json=$(fipsctl show peers 2>/dev/null || true)
 if [ -z "$peers_json" ]; then
     echo "FAIL: fipsctl show peers returned nothing (control socket absent?)"; FAILED=1
