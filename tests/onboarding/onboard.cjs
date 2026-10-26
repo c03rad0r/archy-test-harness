@@ -15,7 +15,7 @@ const { chromium } = require('playwright');
 
 const URL = process.env.ARCHY_UI_URL || 'http://127.0.0.1:18080/';
 const OUT = process.env.OUT_DIR || '/tmp/onboard';
-const MAX_STEPS = Number(process.env.MAX_STEPS || 14);
+const MAX_STEPS = Number(process.env.MAX_STEPS || 20);
 const HEADLESS = process.env.HEADED !== '1';
 
 // Match a numbered seed-word list so it can be redacted before any logging.
@@ -43,9 +43,42 @@ const redact = (s) =>
   await page.keyboard.press('Enter');
   await page.waitForTimeout(3000);
 
-  // 2. intro video
-  const skip = page.getByText('Skip Intro', { exact: false });
-  if (await skip.count()) { await skip.first().click({ force: true }); await page.waitForTimeout(3000); }
+  // 2. intro video. Do NOT use a fixed sleep here: on a slower boot the Skip
+  // control appears well after the video starts, and pressing Enter into a
+  // playing <video> does nothing — which looks exactly like a hung app. Wait
+  // for the control with a real timeout, and retry with Enter only if the
+  // screen is blank.
+  let skipped = false;
+  for (let attempt = 0; attempt < 8 && !skipped; attempt++) {
+    const skipBtn = page.getByText('Skip Intro', { exact: false });
+    if (await skipBtn.count()) {
+      await skipBtn.first().click({ force: true }).catch(() => {});
+      skipped = true;
+      note('skipped intro');
+      break;
+    }
+    // Give the SPA time to paint the control before another nudge.
+    await page.waitForTimeout(2500);
+    if (!(await page.locator('body').innerText()).trim()) {
+      await page.keyboard.press('Space').catch(() => {});
+    }
+  }
+  if (!skipped) note('WARNING: never saw a Skip Intro control');
+
+  // 3. The intro hands over to the wizard with a blank/transitional screen that
+  // can last tens of seconds. Counting keypresses through it burns the step
+  // budget and lands on the wizard with none left — observed at step 13 of 14.
+  // Wait for the wizard's own text instead of guessing how long it takes.
+  try {
+    await page.waitForFunction(
+      () => /Unlock your sovereignty|Welcome to Archipelago/i.test(document.body.innerText),
+      { timeout: 90000 }
+    );
+    note('wizard visible');
+  } catch {
+    note('WARNING: wizard text never appeared within 90s — continuing anyway');
+  }
+  await page.waitForTimeout(1500);
 
   let sawSeed = false;
   // The wizard shows a 24-word seed and then asks for four specific words back.
@@ -54,9 +87,34 @@ const redact = (s) =>
   // is the point of this step, so a test that skips it is not testing onboarding.
   const seed = new Map();
 
-  for (let step = 0; step < MAX_STEPS; step++) {
-    const body = await page.locator('body').innerText();
+  let step = 0;
+  while (step < MAX_STEPS) {
+    // A read can land mid-navigation (the SPA tears down the document on submit),
+    // which throws "Execution context was destroyed". Retry once rather than
+    // aborting a run that is actually progressing.
+    let body = '';
+    try {
+      body = await page.locator('body').innerText();
+    } catch {
+      await page.waitForTimeout(2500);
+      body = await page.locator('body').innerText().catch(() => '');
+    }
     const text = redact(body.replace(/\s+/g, ' ').trim());
+
+    // "Server starting up 0:12 ... This usually takes 1-3 minutes" is a wait, not
+    // a step. Pressing Enter does nothing here, and counting it as a step burned
+    // the whole budget on the countdown (observed: 12 consecutive empty steps,
+    // wizard never advanced). Wait it out without consuming a step.
+    if (/Server starting up/i.test(body)) {
+      await page.waitForFunction(
+        () => !/Server starting up/i.test(document.body.innerText),
+        { timeout: 300000 }
+      ).catch(() => note('WARNING: server startup screen did not clear in 5min'));
+      continue;
+    }
+    // Count only real wizard steps. The `continue`s below (seed verify, password)
+    // would otherwise loop without ever advancing the budget.
+    step += 1;
 
     // Harvest the numbered seed list (1. word 2. word ...) if present.
     for (const m of body.matchAll(/(\d{1,2})\.\s*([a-z]{3,8})\b/g)) {
@@ -99,18 +157,31 @@ const redact = (s) =>
     const pwFields = page.locator('input[type="password"]');
     const pwCount = await pwFields.count();
     if (pwCount >= 1) {
+      // After "Set Up Node" is clicked the form re-renders with disabled inputs
+      // while the request is in flight. Filling a disabled field throws after a
+      // 30 s timeout (observed), which aborts an otherwise successful run. Only
+      // fill when the field actually accepts input.
+      const enabled = await pwFields.first().isEnabled().catch(() => false);
+      if (!enabled) {
+        note('  password fields disabled (submitting) — waiting');
+        await page.waitForTimeout(8000);
+        continue;
+      }
       const password = process.env.ARCHY_TEST_PASSWORD;
       if (!password) {
         note('  PASSWORD_REQUIRED but ARCHY_TEST_PASSWORD is not set — cannot continue');
         break;
       }
-      for (let i = 0; i < pwCount; i++) await pwFields.nth(i).fill(password);
+      for (let i = 0; i < pwCount; i++) {
+        await pwFields.nth(i).fill(password).catch(() => {});
+      }
       note(`  filled ${pwCount} password field(s)`);
       const setupBtn = page.getByRole('button', { name: /set up node|create node|finish|continue/i });
       if (await setupBtn.count()) {
-        await setupBtn.first().click({ force: true });
+        await setupBtn.first().click({ force: true }).catch(() => {});
         note('  clicked Set Up Node');
-        await page.waitForTimeout(8000);
+        // Let the submit + dashboard transition settle before the next read.
+        await page.waitForTimeout(12000);
         continue;
       }
     }

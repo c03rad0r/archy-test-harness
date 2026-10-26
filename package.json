@@ -1,0 +1,12 @@
+{
+  "name": "archy-test-harness",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Browser-driven E2E lanes for Archipelago. The Python suite is the main harness; this package exists so the Playwright driver has a declared, installable dependency instead of borrowing another repo's node_modules.",
+  "scripts": {
+    "onboarding": "node tests/onboarding/onboard.cjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.60.0"
+  }
+}
