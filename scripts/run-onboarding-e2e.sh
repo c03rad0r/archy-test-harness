@@ -22,7 +22,7 @@
 #   * /dev/kvm on the host; a disk produced by vm-boot-installer.sh + onboarding
 set -uo pipefail
 
-HOST=""; DISK=""; PASSWORD=""
+HOST=""; DISK=""; PASSWORD=""; INJECT_KEY=""
 SSH_USER=""; SSH_HOST=""
 SSH_PORT=2222; WEB_PORT=8080; LOCAL_WEB=18080
 RAM=2048; CPUS=2
@@ -34,6 +34,7 @@ while [ $# -gt 0 ]; do
         --host)     HOST="${2:?}"; shift ;;
         --disk)     DISK="${2:?}"; shift ;;
         --password) PASSWORD="${2:?}"; shift ;;
+        --inject-key) INJECT_KEY="${2:?}"; shift ;;
         --ssh-port) SSH_PORT="${2:?}"; shift ;;
         --web-port) WEB_PORT="${2:?}"; shift ;;
         --local-web) LOCAL_WEB="${2:?}"; shift ;;
@@ -77,9 +78,28 @@ if rssh "pgrep -f 'qemu[-]system.*$(basename "$DISK")' >/dev/null"; then
 fi
 echo "preflight ok"
 
+# A freshly installed disk has no SSH at all: openssh-server is present but root
+# login is disabled and no key exists. Without this step onboarding is unreachable
+# and the lane could only ever run against a disk someone had already prepared by
+# hand — which is not a test.
+if [ -n "$INJECT_KEY" ]; then
+    [ -f "$INJECT_KEY" ] || { echo "FAIL: no such pubkey: $INJECT_KEY" >&2; exit 1; }
+    echo "=== injecting SSH access into the disk (pre-boot) ==="
+    rssh 'cat > /tmp/harness.pub' < "$INJECT_KEY" || { echo "FAIL: could not copy pubkey" >&2; exit 1; }
+    rssh 'cat > /tmp/harness-inject.sh && chmod +x /tmp/harness-inject.sh' < "$HERE/inject-ssh-key.sh"
+    rssh 'cat > /tmp/harness-enable-ssh.sh && chmod +x /tmp/harness-enable-ssh.sh' < "$HERE/enable-ssh-root.sh"
+    rssh "/tmp/harness-inject.sh '$DISK' /tmp/harness.pub"  | tail -5
+    rssh "/tmp/harness-enable-ssh.sh '$DISK'"               | tail -3
+    echo "ssh injection ok"
+fi
+
 echo "=== 2/5 booting the installed disk ==="
+# Ship the boot script to the host: the harness usually lives on the workstation,
+# not on the VM host, so referencing "$HERE" there would fail.
+rssh 'cat > /tmp/harness-vm-boot-installed.sh && chmod +x /tmp/harness-vm-boot-installed.sh' \
+    < "$HERE/vm-boot-installed.sh" || { echo "FAIL: could not copy boot script" >&2; exit 1; }
 # setsid + nohup: the VM must outlive this ssh session, which exits immediately.
-rssh "cd '$HERE' 2>/dev/null || cd /; setsid nohup '$HERE/vm-boot-installed.sh' --disk '$DISK' --ram $RAM --cpus $CPUS --ssh-port $SSH_PORT --web-port $WEB_PORT >/tmp/archy-vm-boot.log 2>&1 < /dev/null & echo started"
+rssh "setsid nohup /tmp/harness-vm-boot-installed.sh --disk '$DISK' --ram $RAM --cpus $CPUS --ssh-port $SSH_PORT --web-port $WEB_PORT >/tmp/archy-vm-boot.log 2>&1 < /dev/null & echo started"
 VM_STARTED=1
 
 echo -n "waiting for guest ssh"
