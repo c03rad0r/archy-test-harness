@@ -87,9 +87,25 @@ const redact = (s) =>
   // is the point of this step, so a test that skips it is not testing onboarding.
   const seed = new Map();
 
-  for (let step = 0; step < MAX_STEPS; step++) {
+  let step = 0;
+  while (step < MAX_STEPS) {
     const body = await page.locator('body').innerText();
     const text = redact(body.replace(/\s+/g, ' ').trim());
+
+    // "Server starting up 0:12 ... This usually takes 1-3 minutes" is a wait, not
+    // a step. Pressing Enter does nothing here, and counting it as a step burned
+    // the whole budget on the countdown (observed: 12 consecutive empty steps,
+    // wizard never advanced). Wait it out without consuming a step.
+    if (/Server starting up/i.test(body)) {
+      await page.waitForFunction(
+        () => !/Server starting up/i.test(document.body.innerText),
+        { timeout: 300000 }
+      ).catch(() => note('WARNING: server startup screen did not clear in 5min'));
+      continue;
+    }
+    // Count only real wizard steps. The `continue`s below (seed verify, password)
+    // would otherwise loop without ever advancing the budget.
+    step += 1;
 
     // Harvest the numbered seed list (1. word 2. word ...) if present.
     for (const m of body.matchAll(/(\d{1,2})\.\s*([a-z]{3,8})\b/g)) {
