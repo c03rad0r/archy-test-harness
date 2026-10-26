@@ -60,9 +60,11 @@ REQUIRED = {
     "ARCHY_RPC_URL": RPC_URL,
     "ARCHY_RPC_PASSWORD": RPC_PASSWORD,
     "ARCHY_ROUTER_HOST": ROUTER_HOST,
-    "ARCHY_ROUTER_PASSWORD": ROUTER_PASSWORD,
 }
 MISSING = sorted(k for k, v in REQUIRED.items() if not v)
+# Router auth may be a password or a key — require one, not both.
+if not (ROUTER_PASSWORD or os.environ.get("ARCHY_ROUTER_KEY")):
+    MISSING.append("ARCHY_ROUTER_PASSWORD|ARCHY_ROUTER_KEY")
 pytestmark = pytest.mark.skipif(
     bool(MISSING),
     reason=f"tollgate venue unavailable, missing: {MISSING}",
@@ -116,13 +118,34 @@ class Node:
         return r["result"]
 
 
+ROUTER_KEY = os.environ.get("ARCHY_ROUTER_KEY", "")
+
+
+def status_params() -> dict:
+    """get-status authenticates to the router itself, so it needs the creds."""
+    return {
+        "host": ROUTER_HOST,
+        "ssh_user": "root",
+        "ssh_password": ROUTER_PASSWORD,
+    }
+
+
 def router_ssh(command: str) -> str:
-    """Run a command on the router over SSH (password auth, no key assumption)."""
+    """Run a command on the router over SSH.
+
+    Key auth when ARCHY_ROUTER_KEY is set (the physical lab routers), otherwise
+    password auth. Both are real venues; neither is assumed.
+    """
+    if ROUTER_KEY:
+        argv = ["ssh", "-i", ROUTER_KEY, "-o", "IdentitiesOnly=yes"]
+    else:
+        argv = ["sshpass", "-p", ROUTER_PASSWORD, "ssh"]
     proc = subprocess.run(
-        [
-            "sshpass", "-p", ROUTER_PASSWORD,
-            "ssh", "-o", "StrictHostKeyChecking=no",
+        argv
+        + [
+            "-o", "StrictHostKeyChecking=no",
             "-o", "UserKnownHostsFile=/dev/null",
+            "-o", "BatchMode=yes" if ROUTER_KEY else "BatchMode=no",
             "-o", "ConnectTimeout=15",
             f"root@{ROUTER_HOST}", command,
         ],
@@ -166,7 +189,7 @@ def test_provision_pins_the_release_version(node: Node) -> None:
 
 def test_node_reports_the_pinned_version(node: Node) -> None:
     """The node's own view must say installed, version-known, and up to date."""
-    status = node.call("openwrt.get-status", {"host": ROUTER_HOST})
+    status = node.call("openwrt.get-status", status_params())
     _evidence("get-status.json", status)
     # get-status returns {host, hostname, release, tollgate:{...}} — the
     # TollGate verdict lives under "tollgate", not at the top level.
@@ -189,7 +212,7 @@ def test_router_agrees_with_the_node(node: Node) -> None:
     This is the check a success flag cannot fake. If the node and the router
     disagree, the node is reporting a state the device is not in.
     """
-    status = (node.call("openwrt.get-status", {"host": ROUTER_HOST}) or {}).get("tollgate") or {}
+    status = (node.call("openwrt.get-status", status_params()) or {}).get("tollgate") or {}
     remote_version = ""
 
     opkg = router_ssh("opkg list-installed 2>/dev/null | grep '^tollgate-wrt ' || true")
