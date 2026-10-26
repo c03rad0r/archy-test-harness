@@ -55,6 +55,11 @@ ROUTER_HOST = os.environ.get("ARCHY_ROUTER_HOST", "")
 ROUTER_PASSWORD = os.environ.get("ARCHY_ROUTER_PASSWORD", "")
 EXPECTED = os.environ.get("ARCHY_TOLLGATE_VERSION", "0.6.0")
 EVIDENCE_DIR = Path(os.environ.get("ARCHY_EVIDENCE_DIR", "results/tollgate"))
+# Provision is download + sha256 + install + read-back on the ROUTER's CPU.
+# A mipsel_24kc board exceeded 60s, and the client gave up while the router
+# went on to finish successfully - a test-side timeout is not a product
+# failure, so this is generous and overridable.
+RPC_TIMEOUT = int(os.environ.get("ARCHY_RPC_TIMEOUT", "300"))
 
 REQUIRED = {
     "ARCHY_RPC_URL": RPC_URL,
@@ -99,7 +104,7 @@ class Node:
         if self.csrf:
             req.add_header("X-CSRF-Token", self.csrf)
         try:
-            with urllib.request.urlopen(req, timeout=60) as r:
+            with urllib.request.urlopen(req, timeout=RPC_TIMEOUT) as r:
                 for header in r.headers.get_all("Set-Cookie") or []:
                     k, _, v = header.partition("=")
                     self.cookies[k.strip()] = v.split(";")[0]
