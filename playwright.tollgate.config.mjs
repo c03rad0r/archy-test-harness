@@ -41,3 +41,8 @@ export default defineConfig({
   },
   projects: [{ name: 'chromium', use: { browserName: 'chromium' } }],
 });
+// NOTE (measured): the portal SPA calls its backend on :2121, not only the page
+// on :2050. A tunnel forwarding BOTH is required or the page renders its own
+// "#TG003 Could not fetch TollGate information" error — which looks like a
+// product failure and is really a missing forward. Verified: forwarding only
+// :2050 gives TG003; forwarding :2050 and :2121 gives the full payment UI.
