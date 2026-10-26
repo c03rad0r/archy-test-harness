@@ -23,6 +23,7 @@
 set -uo pipefail
 
 HOST=""; DISK=""; PASSWORD=""; INJECT_KEY=""
+SSH_KEY="${HOME}/.ssh/id_fleet"
 SSH_USER=""; SSH_HOST=""
 SSH_PORT=2222; WEB_PORT=8080; LOCAL_WEB=18080
 RAM=2048; CPUS=2
@@ -35,6 +36,7 @@ while [ $# -gt 0 ]; do
         --disk)     DISK="${2:?}"; shift ;;
         --password) PASSWORD="${2:?}"; shift ;;
         --inject-key) INJECT_KEY="${2:?}"; shift ;;
+        --ssh-key)  SSH_KEY="${2:?}"; shift ;;
         --ssh-port) SSH_PORT="${2:?}"; shift ;;
         --web-port) WEB_PORT="${2:?}"; shift ;;
         --local-web) LOCAL_WEB="${2:?}"; shift ;;
@@ -50,8 +52,33 @@ command -v node >/dev/null || { echo "FAIL: node not installed" >&2; exit 1; }
 
 SSH_USER="${HOST%@*}"; SSH_HOST="${HOST#*@}"
 
-# -n so a failed probe cannot consume stdin meant for the heredoc-free steps below.
-rssh() { ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$HOST" "$@"; }
+SSH_OPTS=(-o StrictHostKeyChecking=no -o ConnectTimeout=10)
+PROXY="ssh -o StrictHostKeyChecking=no -W %h:%p $HOST"
+if [ -n "$SSH_KEY" ]; then
+    [ -f "$SSH_KEY" ] || { echo "FAIL: no such key: $SSH_KEY" >&2; exit 1; }
+    SSH_OPTS+=(-i "$SSH_KEY")
+    PROXY="ssh -i $SSH_KEY -o StrictHostKeyChecking=no -W %h:%p $HOST"
+fi
+
+# The guest is a throwaway VM reached through a localhost port forward; its SSH
+# host key changes on every reinstall, so verifying it would fail every run for a
+# reason that carries no security meaning here. This exemption is scoped to the
+# guest ONLY — the hop to the VM host keeps normal host-key checking.
+GUEST_SSH_OPTS=("${SSH_OPTS[@]}" -o UserKnownHostsFile=/dev/null)
+
+# -n keeps a probe from consuming this script's stdin. It is deliberately NOT
+# used by rssh_put: `ssh -n` redirects stdin from /dev/null, so `cat > file <
+# local` silently writes a ZERO-BYTE file. That bug shipped once (a 0-byte boot
+# script) and only looked fine because stale copies were already on the host.
+rssh() { ssh -n "${SSH_OPTS[@]}" "$HOST" "$@"; }
+
+# Copy a local file to the host at an absolute path, preserving +x.
+rssh_put() {
+    local dest="$1" src="$2"
+    ssh "${SSH_OPTS[@]}" "$HOST" "cat > '$dest' && chmod +x '$dest'" < "$src"
+    ssh -n "${SSH_OPTS[@]}" "$HOST" "test -s '$dest'" \
+        || { echo "FAIL: upload of $src to $dest produced an empty file" >&2; exit 1; }
+}
 
 VM_STARTED=0; TUNNEL_PID=""
 
@@ -62,7 +89,7 @@ cleanup() {
         # Kill by PID, never `pkill -f <pattern>`: the pattern appears in the
         # remote shell's own command line and would kill the session instead.
         # `qemu[-]system` keeps the pattern from matching its own invocation.
-        rssh "for p in \$(pgrep -f 'qemu[-]system.*$(basename "$DISK")'); do kill \"\$p\"; done" 2>/dev/null
+        rssh "for p in \$(pgrep -f '$DISK_PAT'); do kill \"\$p\"; done" 2>/dev/null
     fi
 }
 trap cleanup EXIT INT TERM
@@ -71,8 +98,12 @@ echo "=== 1/5 preflight ==="
 rssh "test -f '$DISK'" || { echo "FAIL: $DISK not on $SSH_HOST" >&2; exit 1; }
 rssh "test -r /dev/kvm" || { echo "FAIL: /dev/kvm not readable on $SSH_HOST" >&2; exit 1; }
 rssh "command -v qemu-system-x86_64 >/dev/null" || { echo "FAIL: qemu missing on $SSH_HOST" >&2; exit 1; }
-# A disk already held by a VM must not be booted twice.
-if rssh "pgrep -f 'qemu[-]system.*$(basename "$DISK")' >/dev/null"; then
+# A disk already held by a VM must not be booted twice. Match the FULL path: two
+# runs of vm-boot-installer.sh both produce `archy-test.qcow2`, so a basename
+# match reports the wrong disk as busy (observed: a live VM on ~/archy-vm while
+# ~/archy-vm2 was idle).
+DISK_PAT="qemu[-]system.*${DISK}"
+if rssh "pgrep -f '$DISK_PAT' >/dev/null"; then
     echo "FAIL: a VM is already using $DISK on $SSH_HOST — stop it first" >&2
     exit 1
 fi
@@ -85,9 +116,9 @@ echo "preflight ok"
 if [ -n "$INJECT_KEY" ]; then
     [ -f "$INJECT_KEY" ] || { echo "FAIL: no such pubkey: $INJECT_KEY" >&2; exit 1; }
     echo "=== injecting SSH access into the disk (pre-boot) ==="
-    rssh 'cat > /tmp/harness.pub' < "$INJECT_KEY" || { echo "FAIL: could not copy pubkey" >&2; exit 1; }
-    rssh 'cat > /tmp/harness-inject.sh && chmod +x /tmp/harness-inject.sh' < "$HERE/inject-ssh-key.sh"
-    rssh 'cat > /tmp/harness-enable-ssh.sh && chmod +x /tmp/harness-enable-ssh.sh' < "$HERE/enable-ssh-root.sh"
+    rssh_put /tmp/harness.pub "$INJECT_KEY"
+    rssh_put /tmp/harness-inject.sh "$HERE/inject-ssh-key.sh"
+    rssh_put /tmp/harness-enable-ssh.sh "$HERE/enable-ssh-root.sh"
     rssh "/tmp/harness-inject.sh '$DISK' /tmp/harness.pub"  | tail -5
     rssh "/tmp/harness-enable-ssh.sh '$DISK'"               | tail -3
     echo "ssh injection ok"
@@ -96,8 +127,8 @@ fi
 echo "=== 2/5 booting the installed disk ==="
 # Ship the boot script to the host: the harness usually lives on the workstation,
 # not on the VM host, so referencing "$HERE" there would fail.
-rssh 'cat > /tmp/harness-vm-boot-installed.sh && chmod +x /tmp/harness-vm-boot-installed.sh' \
-    < "$HERE/vm-boot-installed.sh" || { echo "FAIL: could not copy boot script" >&2; exit 1; }
+rssh_put /tmp/harness-vm-boot-installed.sh "$HERE/vm-boot-installed.sh" \
+    || { echo "FAIL: could not copy boot script" >&2; exit 1; }
 # setsid + nohup: the VM must outlive this ssh session, which exits immediately.
 rssh "setsid nohup /tmp/harness-vm-boot-installed.sh --disk '$DISK' --ram $RAM --cpus $CPUS --ssh-port $SSH_PORT --web-port $WEB_PORT >/tmp/archy-vm-boot.log 2>&1 < /dev/null & echo started"
 VM_STARTED=1
@@ -114,7 +145,7 @@ rssh "timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/$WEB_PORT' 2>/dev/null" \
 
 echo "=== 3/5 opening the tunnel ==="
 # 127.0.0.1 on the host only; the guest is not published to the network.
-ssh -N -o StrictHostKeyChecking=no -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 \
+ssh -N "${SSH_OPTS[@]}" -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 \
     -L "${LOCAL_WEB}:127.0.0.1:${WEB_PORT}" "$HOST" &
 TUNNEL_PID=$!
 for _ in $(seq 1 20); do
@@ -136,7 +167,7 @@ echo "onboarding finished; artifacts in $OUT"
 
 echo "=== 5/5 verifying the mesh in the guest ==="
 # Pipe the assertion script in, so the guest never needs a copy of the harness.
-if ssh -o StrictHostKeyChecking=no -o "ProxyCommand=ssh -o StrictHostKeyChecking=no -W %h:%p $HOST" \
+if ssh "${GUEST_SSH_OPTS[@]}" -o "ProxyCommand=$PROXY" \
        -p "$SSH_PORT" root@127.0.0.1 "ARCHY_FIPS_VERSION='$EXPECT' bash -s" < "$HERE/verify-fips-onboarding.sh" \
        | tee "$OUT/verify.log"; then
     echo "RESULT: onboarding E2E PASS"

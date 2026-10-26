@@ -16,3 +16,6 @@ venv/
 *.local.yaml
 .idea/
 .vscode/
+
+# Node deps for the Playwright lanes (package.json declares them)
+node_modules/

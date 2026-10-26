@@ -15,7 +15,7 @@ const { chromium } = require('playwright');
 
 const URL = process.env.ARCHY_UI_URL || 'http://127.0.0.1:18080/';
 const OUT = process.env.OUT_DIR || '/tmp/onboard';
-const MAX_STEPS = Number(process.env.MAX_STEPS || 14);
+const MAX_STEPS = Number(process.env.MAX_STEPS || 20);
 const HEADLESS = process.env.HEADED !== '1';
 
 // Match a numbered seed-word list so it can be redacted before any logging.
@@ -43,9 +43,42 @@ const redact = (s) =>
   await page.keyboard.press('Enter');
   await page.waitForTimeout(3000);
 
-  // 2. intro video
-  const skip = page.getByText('Skip Intro', { exact: false });
-  if (await skip.count()) { await skip.first().click({ force: true }); await page.waitForTimeout(3000); }
+  // 2. intro video. Do NOT use a fixed sleep here: on a slower boot the Skip
+  // control appears well after the video starts, and pressing Enter into a
+  // playing <video> does nothing — which looks exactly like a hung app. Wait
+  // for the control with a real timeout, and retry with Enter only if the
+  // screen is blank.
+  let skipped = false;
+  for (let attempt = 0; attempt < 8 && !skipped; attempt++) {
+    const skipBtn = page.getByText('Skip Intro', { exact: false });
+    if (await skipBtn.count()) {
+      await skipBtn.first().click({ force: true }).catch(() => {});
+      skipped = true;
+      note('skipped intro');
+      break;
+    }
+    // Give the SPA time to paint the control before another nudge.
+    await page.waitForTimeout(2500);
+    if (!(await page.locator('body').innerText()).trim()) {
+      await page.keyboard.press('Space').catch(() => {});
+    }
+  }
+  if (!skipped) note('WARNING: never saw a Skip Intro control');
+
+  // 3. The intro hands over to the wizard with a blank/transitional screen that
+  // can last tens of seconds. Counting keypresses through it burns the step
+  // budget and lands on the wizard with none left — observed at step 13 of 14.
+  // Wait for the wizard's own text instead of guessing how long it takes.
+  try {
+    await page.waitForFunction(
+      () => /Unlock your sovereignty|Welcome to Archipelago/i.test(document.body.innerText),
+      { timeout: 90000 }
+    );
+    note('wizard visible');
+  } catch {
+    note('WARNING: wizard text never appeared within 90s — continuing anyway');
+  }
+  await page.waitForTimeout(1500);
 
   let sawSeed = false;
   // The wizard shows a 24-word seed and then asks for four specific words back.
