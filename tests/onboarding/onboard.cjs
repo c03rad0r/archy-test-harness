@@ -89,7 +89,16 @@ const redact = (s) =>
 
   let step = 0;
   while (step < MAX_STEPS) {
-    const body = await page.locator('body').innerText();
+    // A read can land mid-navigation (the SPA tears down the document on submit),
+    // which throws "Execution context was destroyed". Retry once rather than
+    // aborting a run that is actually progressing.
+    let body = '';
+    try {
+      body = await page.locator('body').innerText();
+    } catch {
+      await page.waitForTimeout(2500);
+      body = await page.locator('body').innerText().catch(() => '');
+    }
     const text = redact(body.replace(/\s+/g, ' ').trim());
 
     // "Server starting up 0:12 ... This usually takes 1-3 minutes" is a wait, not
@@ -148,18 +157,31 @@ const redact = (s) =>
     const pwFields = page.locator('input[type="password"]');
     const pwCount = await pwFields.count();
     if (pwCount >= 1) {
+      // After "Set Up Node" is clicked the form re-renders with disabled inputs
+      // while the request is in flight. Filling a disabled field throws after a
+      // 30 s timeout (observed), which aborts an otherwise successful run. Only
+      // fill when the field actually accepts input.
+      const enabled = await pwFields.first().isEnabled().catch(() => false);
+      if (!enabled) {
+        note('  password fields disabled (submitting) — waiting');
+        await page.waitForTimeout(8000);
+        continue;
+      }
       const password = process.env.ARCHY_TEST_PASSWORD;
       if (!password) {
         note('  PASSWORD_REQUIRED but ARCHY_TEST_PASSWORD is not set — cannot continue');
         break;
       }
-      for (let i = 0; i < pwCount; i++) await pwFields.nth(i).fill(password);
+      for (let i = 0; i < pwCount; i++) {
+        await pwFields.nth(i).fill(password).catch(() => {});
+      }
       note(`  filled ${pwCount} password field(s)`);
       const setupBtn = page.getByRole('button', { name: /set up node|create node|finish|continue/i });
       if (await setupBtn.count()) {
-        await setupBtn.first().click({ force: true });
+        await setupBtn.first().click({ force: true }).catch(() => {});
         note('  clicked Set Up Node');
-        await page.waitForTimeout(8000);
+        // Let the submit + dashboard transition settle before the next read.
+        await page.waitForTimeout(12000);
         continue;
       }
     }
