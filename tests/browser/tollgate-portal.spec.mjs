@@ -52,10 +52,20 @@ test.describe('TollGate captive portal', () => {
       ).toBe(false);
     }
 
-    // And it must offer something a customer can actually act on.
+    // And it must offer something a customer can actually act on. "Loading"
+    // and a footer link both satisfy a loose regex, so wait for the actual
+    // offer to render and assert a price, which only comes from the backend.
+    await expect(page.getByText(/\d+\s*SAT(S)?/i).first()).toBeVisible({
+      timeout: 45000,
+    });
+    const settled = (await root.innerText()).trim();
     expect(
-      /pay|sats|step|connect|buy/i.test(text),
-      `portal shows no payment/access affordance. Rendered text:\n${text}`,
+      /SAT(S)?/i.test(settled),
+      `portal never rendered a price. Rendered text:\n${settled}`,
+    ).toBe(true);
+    expect(
+      /pay|purchase|connect|buy/i.test(settled),
+      `portal shows no payment/access affordance. Rendered text:\n${settled}`,
     ).toBe(true);
   });
 

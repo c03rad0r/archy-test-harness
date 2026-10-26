@@ -21,16 +21,14 @@ export default defineConfig({
     baseURL: PORTAL,
     headless: true,
     ignoreHTTPSErrors: true,
-    // NoDogSplash redirects every request to its canonical host
-    // (192.168.99.1:2050) — the address a customer's browser is expected to
-    // reach. A test driving the portal through an SSH tunnel cannot resolve it,
-    // so the browser's resolver is told where that host actually is. Transport
-    // only: the bytes served, and therefore what is asserted, are the router's.
+    // When driving the portal through an SSH tunnel (TOLLGATE_TUNNEL=1), the
+    // browser must be told where the router's canonical host really is, because
+    // NoDogSplash redirects every request to it. When this host is ITSELF a
+    // client on the paid SSID, no mapping is wanted — the address routes.
     launchOptions: {
-      args: [
-        '--host-resolver-rules=MAP 192.168.99.1 [::1]',
-        '--no-sandbox',
-      ],
+      args: process.env.TOLLGATE_TUNNEL === '1'
+        ? ['--host-resolver-rules=MAP 192.168.99.1 [::1]', '--no-sandbox']
+        : ['--no-sandbox'],
     },
     screenshot: 'on',
     // 'retain-on-failure' would delete the video of a PASSING run — the exact
