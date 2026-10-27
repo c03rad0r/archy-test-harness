@@ -1,6 +1,6 @@
 # Plan: Archipelago upstream PRs + fleet test infrastructure
 
-Status: harness IaC implemented; fleet runs in progress.
+Status: harness IaC implemented; x240 build/tests green; ISO build running.
 Updated: 2026-10-27.
 
 This is the version-controlled plan. The operator checklist is at the end.
@@ -143,14 +143,14 @@ Yes, once the **integration build** is VM-validated:
 - [x] `pr-check.sh`
 - [x] Plan/host/target/PR docs
 - [x] `make lint` green
-- [ ] Merge to the fork default branch
+- [x] Pushed to `c03rad0r/archy-test-harness` main (canonical repo is read-only)
 
 ### Build and test
-- [ ] `make host-check HOST=x240` green
-- [ ] `make host-bootstrap HOST=x240` (sudo)
-- [ ] `make build HOST=x240 RELEASE=1`
-- [ ] `make smoke HOST=x240`
-- [ ] `make media-local HOST=x240`
+- [x] `make host-check HOST=x240` green
+- [x] `make host-bootstrap HOST=x240` (sudo)
+- [x] `make build HOST=x240` (debug, `fix/media-stream-deadline`)
+- [x] `make smoke HOST=x240` (44 PASS)
+- [x] `make media-local HOST=x240` (6 PASS, twonode NOT VERIFIED)
 - [ ] Build integration ISO on x240 or inr2
 - [ ] `make vm-install HOST=t440`
 - [ ] `make onboarding HOST=t440`
