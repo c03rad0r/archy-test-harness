@@ -110,6 +110,16 @@
   become: true
   tags: [install]
 
+- name: Configure podman unqualified search registries
+  ansible.builtin.copy:
+    dest: /etc/containers/registries.conf.d/999-archy-unqualified.conf
+    mode: "0644"
+    content: |
+      unqualified-search-registries = ["docker.io"]
+      short-name-mode = "permissive"
+  become: true
+  tags: [install]
+
 - name: Install Rust for the target user
   ansible.builtin.shell:
     cmd: >-
