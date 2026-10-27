@@ -67,6 +67,13 @@ rm -rf "$SRC"; mkdir -p "$SRC"
 git -C "$REPO" archive "$SHA" | tar -x -C "$SRC" || { echo "FAIL: archive" >&2; exit 1; }
 echo "source: $SRC ($(du -sh "$SRC" | cut -f1))"
 
+echo "=== 2a/4 build the esptool bundle ==="
+if [ ! -x "$SRC/reticulum-daemon/dist/archy-esptool" ]; then
+  ( cd "$SRC/reticulum-daemon" && bash build-esptool.sh ) \
+    || { echo "FAIL: archy-esptool build failed" >&2; echo "RESULT: FAIL"; exit 1; }
+fi
+echo "esptool: $SRC/reticulum-daemon/dist/archy-esptool"
+
 echo "=== 2/4 build the ISO (this takes ~15-25 min cold) ==="
 LOGF="$WORK/build-$SHORT.log"
 mkdir -p "$WORK"
