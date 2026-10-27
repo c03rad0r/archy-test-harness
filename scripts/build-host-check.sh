@@ -38,7 +38,7 @@ req() {
 have() { command -v "$1" >/dev/null 2>&1; }
 
 # --- tooling ---------------------------------------------------------------
-for tool in podman xorriso debootstrap qemu-img isolinux mksquashfs grub-mkrescue; do
+for tool in podman xorriso debootstrap qemu-img mksquashfs grub-mkrescue; do
     req "tool:$tool" "$(have "$tool" && echo 1 || echo 0)" "$(have "$tool" && command -v "$tool" || echo 'not installed')"
 done
 
@@ -46,6 +46,14 @@ done
 # pure build host, so it is reported but does not fail the check.
 QSYS="$(have qemu-system-x86_64 && echo 1 || echo 0)"
 REQS+=("INFO|tool:qemu-system-x86_64|$([ "$QSYS" = 1 ] && command -v qemu-system-x86_64 || echo 'absent (fine for build-only)')")
+
+# --- isolinux hybrid MBR ---------------------------------------------------
+if [ -f /usr/lib/ISOLINUX/isohdpfx.bin ] || [ -f /usr/share/syslinux/isohdpfx.bin ]; then
+    REQS+=("PASS|isolinux:mbr|isohdpfx.bin present")
+else
+    REQS+=("FAIL|isolinux:mbr|isohdpfx.bin missing (install isolinux/syslinux-common)")
+    FAILED=1
+fi
 
 # --- kernel / virtualisation ----------------------------------------------
 KVMO="$( [ -r /dev/kvm ] && echo 1 || echo 0 )"
