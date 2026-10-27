@@ -89,6 +89,10 @@ echo "backend builder image: $RUST_IMAGE"
 GEN="$SRC/image-recipe/_archived/build-auto-installer-iso.sh"
 if [ -f "$GEN" ]; then
   sed -i '/^WORKDIR \/build$/i RUN apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*' "$GEN"
+  # The backend uses include_str! for app manifests; the minimal builder must
+  # copy the repo's apps/ and app-catalog/ into the build context.
+  sed -i '/^COPY image-recipe\/configs .*/a COPY apps ./apps' "$GEN"
+  sed -i '/^COPY apps .*/a COPY app-catalog ./app-catalog' "$GEN"
 fi
 
 

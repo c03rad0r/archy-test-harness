@@ -63,3 +63,12 @@ Before upstreaming, choose one:
 
 The harness accepts `ARCHY_RUST_IMAGE` for test builds so the rest of the
 pipeline can be exercised while that decision is pending.
+
+## The image builder must copy `apps/`
+
+`core/archipelago/src/api/rpc/package/runtime.rs` uses `include_str!` for
+`apps/nginx-proxy-manager/manifest.yml`. The archived minimal builder's
+generated backend Dockerfile copies only `core`, `scripts` and
+`image-recipe/configs`, so a stock build fails with "No such file or
+directory". The test harness adds `COPY apps ./apps` (and `app-catalog`) until
+the image recipe is fixed upstream.
