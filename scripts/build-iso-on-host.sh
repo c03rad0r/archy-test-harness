@@ -77,11 +77,14 @@ echo "esptool: $SRC/reticulum-daemon/dist/archy-esptool"
 # The backend Dockerfile pins an older Rust than the branch's code needs.
 # Allow an explicit builder image so test builds can match the host toolchain.
 RUST_IMAGE=${ARCHY_RUST_IMAGE:-rust:1-slim-bookworm}
-BACKEND_DOCKERFILE="$SRC/image-recipe/build/auto-installer/Dockerfile.backend"
-if [ -f "$BACKEND_DOCKERFILE" ]; then
-  sed -i -E "s|^FROM rust:[^ ]+ as builder|FROM ${RUST_IMAGE} as builder|" "$BACKEND_DOCKERFILE"
-  echo "backend builder image: $RUST_IMAGE"
-fi
+for dockerfile in \
+  "$SRC/image-recipe/_archived/build-auto-installer-iso.sh" \
+  "$SRC/image-recipe/build/auto-installer/Dockerfile.backend"
+do
+  [ -f "$dockerfile" ] || continue
+  sed -i -E "s|^FROM rust:[^ ]+ as builder|FROM ${RUST_IMAGE} as builder|" "$dockerfile"
+done
+echo "backend builder image: $RUST_IMAGE"
 
 echo "=== 2/4 build the ISO (this takes ~15-25 min cold) ==="
 LOGF="$WORK/build-$SHORT.log"
