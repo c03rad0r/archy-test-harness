@@ -1,0 +1,7 @@
+---
+- name: Host readiness and toolchain
+  hosts: all
+  gather_facts: true
+  become: false
+  roles:
+    - role: host_tools

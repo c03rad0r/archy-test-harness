@@ -37,6 +37,27 @@ export ARCHY_SUT=~/repos/archy
 
 ---
 
+## Fleet automation (IaC)
+
+The make targets are thin aliases over the scripts and the canonical
+`run-profile.py`. `HOST=` runs a target on a Hermes fleet host; an empty `HOST`
+runs locally (T14 is a control point, not a workload host).
+
+```bash
+make host-check HOST=x240
+make build HOST=x240 ARCHY_REF=fix/media-stream-deadline
+make smoke HOST=x240
+make media-local HOST=x240
+make iso HOST=x240 REF=fix/media-stream-deadline BUILD_ONLY=1
+make vm-install HOST=t440 ARCHY_ISO=/path/on/t440.iso
+make usb ARCHY_ISO=/path/to.iso STICK=/dev/sdc
+make media-soak NODE=x280 URL=https://node/content/... MINUTES=16
+```
+
+See [`docs/PLAN.md`](docs/PLAN.md), [`docs/MAKE-TARGETS.md`](docs/MAKE-TARGETS.md),
+[`docs/HOSTS.md`](docs/HOSTS.md), [`docs/PR-SPLIT.md`](docs/PR-SPLIT.md) and
+[`docs/PR-READINESS.md`](docs/PR-READINESS.md).
+
 ## Venues
 
 A **venue** is "where the node under test runs". Tests never know which venue they are on;

@@ -52,7 +52,7 @@ QEMU_ARGS=(
     -monitor "unix:$MON,server,nowait"
     -serial "file:$WORK/serial-installed.log"
     -netdev "user,id=n0,hostfwd=tcp:127.0.0.1:${SSH_PORT}-:22,hostfwd=tcp:127.0.0.1:${WEB_PORT}-:80"
-    -device e1000,netdev=n0
+    -device "e1000,netdev=n0"
 )
 
 # Foreground by design: the caller supervises it (background + teardown), so the

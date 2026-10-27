@@ -12,7 +12,15 @@
 set -uo pipefail
 
 JSON=0
-[ "${1:-}" = "--json" ] && JSON=1
+BUILD_ONLY=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --json) JSON=1; shift ;;
+        --build-only) BUILD_ONLY=1; shift ;;
+        -h|--help) echo "usage: build-host-check.sh [--json] [--build-only]"; exit 0 ;;
+        *) echo "unknown option: $1" >&2; exit 2 ;;
+    esac
+done
 FAILED=0
 declare -a REQS=()
 
@@ -40,11 +48,22 @@ REQS+=("INFO|tool:qemu-system-x86_64|$([ "$QSYS" = 1 ] && command -v qemu-system
 
 # --- kernel / virtualisation ----------------------------------------------
 KVMO="$( [ -r /dev/kvm ] && echo 1 || echo 0 )"
-req "kvm:readable" "$KVMO" "$([ "$KVMO" = 1 ] && echo '/dev/kvm readable' || echo '/dev/kvm not readable — VMs cannot run here')"
+if [ "$BUILD_ONLY" = 1 ]; then
+    REQS+=("INFO|kvm:readable|not required for a build-only host")
+else
+    req "kvm:readable" "$KVMO" "$([ "$KVMO" = 1 ] && echo '/dev/kvm readable' || echo '/dev/kvm not readable — VMs cannot run here')"
+fi
 
 # --- capacity --------------------------------------------------------------
 CORES="$(nproc 2>/dev/null || echo 0)"
-req "cpu:cores>=8" "$( [ "$CORES" -ge 8 ] && echo 1 || echo 0 )" "${CORES} cores"
+if [ "$BUILD_ONLY" = 1 ]; then
+    CPU_MIN=2
+    CPU_LABEL="cpu:cores>=2"
+else
+    CPU_MIN=8
+    CPU_LABEL="cpu:cores>=8"
+fi
+req "$CPU_LABEL" "$( [ "$CORES" -ge "$CPU_MIN" ] && echo 1 || echo 0 )" "${CORES} cores"
 
 MEM_MB="$(awk '/MemTotal/{printf "%d", $2/1024}' /proc/meminfo 2>/dev/null || echo 0)"
 # A cold Rust build of the backend needs real RAM; below ~7 GB the linker starts

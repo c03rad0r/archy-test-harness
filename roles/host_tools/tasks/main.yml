@@ -1,0 +1,154 @@
+---
+- name: Assert a supported OS
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['os_family'] == 'Debian'
+    fail_msg: "Only Debian/Ubuntu hosts are supported by this role."
+  tags: [check, install]
+
+- name: Assert minimum CPU count
+  ansible.builtin.assert:
+    that:
+      - ansible_processor_vcpus | int >= 2
+    fail_msg: "At least 2 vCPUs are required."
+  tags: [check]
+
+- name: Assert minimum RAM
+  ansible.builtin.assert:
+    that:
+      - ansible_memtotal_mb | int >= min_ram_mb | int
+    fail_msg: "At least {{ min_ram_mb }} MB RAM is required."
+  tags: [check]
+
+- name: Read free space on /
+  ansible.builtin.shell:
+    cmd: "df -BG --output=avail / | tail -1 | tr -dc '0-9'"
+  register: host_free_gb
+  changed_when: false
+  tags: [check]
+
+- name: Assert minimum free disk
+  ansible.builtin.assert:
+    that:
+      - host_free_gb.stdout | int >= min_free_gb | int
+    fail_msg: >-
+      Only {{ host_free_gb.stdout }} GB free on /; need {{ min_free_gb }} GB
+      for host_role={{ host_role }}.
+  tags: [check]
+
+- name: Check /dev/kvm
+  ansible.builtin.stat:
+    path: /dev/kvm
+  register: host_kvm
+  tags: [check]
+
+- name: Assert KVM when this host runs VMs
+  ansible.builtin.assert:
+    that:
+      - host_kvm.stat.exists
+    fail_msg: "host_role=vm requires /dev/kvm."
+  when: kvm_required | bool
+  tags: [check]
+
+- name: Check required tools
+  ansible.builtin.shell:
+    cmd: "command -v {{ item }} >/dev/null 2>&1"
+  loop: "{{ required_tools }}"
+  register: host_tool_check
+  changed_when: false
+  failed_when: false
+  tags: [check]
+
+- name: Record missing tools
+  ansible.builtin.set_fact:
+    host_missing_tools: >-
+      {{ host_tool_check.results | selectattr('rc', 'ne', 0)
+         | map(attribute='item') | list }}
+  tags: [check]
+
+- name: Report the host
+  ansible.builtin.debug:
+    msg:
+      - "host: {{ inventory_hostname }} ({{ host_role }})"
+      - "cpu: {{ ansible_processor_vcpus }} vCPU, ram: {{ ansible_memtotal_mb }} MB"
+      - "free: {{ host_free_gb.stdout }} GB"
+      - "kvm: {{ host_kvm.stat.exists }}"
+      - "missing: {{ host_missing_tools | join(', ') if host_missing_tools | length > 0 else 'none' }}"
+  tags: [check]
+
+- name: Install host packages
+  ansible.builtin.apt:
+    name:
+      - podman
+      - qemu-system-x86
+      - qemu-utils
+      - xorriso
+      - debootstrap
+      - rsync
+      - curl
+      - git
+      - build-essential
+      - pkg-config
+      - libssl-dev
+      - python3-venv
+      - python3-pip
+      - nodejs
+      - npm
+      - socat
+      - shellcheck
+      - yamllint
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  become: true
+  tags: [install]
+
+- name: Install Rust for the target user
+  ansible.builtin.shell:
+    cmd: >-
+      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs
+      | sh -s -- -y --profile minimal
+    creates: "{{ ansible_env.HOME }}/.cargo/bin/cargo"
+  become: true
+  become_user: "{{ ansible_user }}"
+  environment:
+    HOME: "{{ ansible_env.HOME }}"
+  tags: [install]
+
+- name: Create the harness Python venv
+  ansible.builtin.command:
+    cmd: "python3 -m venv {{ ansible_env.HOME }}/.venvs/archy-harness"
+    creates: "{{ ansible_env.HOME }}/.venvs/archy-harness/bin/python"
+  become: true
+  become_user: "{{ ansible_user }}"
+  environment:
+    HOME: "{{ ansible_env.HOME }}"
+  tags: [install]
+
+- name: Install Python test dependencies
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_env.HOME }}/.venvs/archy-harness/bin/pip install
+      --upgrade pip pytest pytest-timeout requests
+  become: true
+  become_user: "{{ ansible_user }}"
+  environment:
+    HOME: "{{ ansible_env.HOME }}"
+  tags: [install]
+
+- name: Check for a synced harness checkout
+  ansible.builtin.stat:
+    path: "{{ ansible_env.HOME }}/archy-test-harness/package.json"
+  register: host_harness_pkg
+  tags: [install]
+
+- name: Install Playwright dependencies
+  ansible.builtin.command:
+    cmd: npm install
+    chdir: "{{ ansible_env.HOME }}/archy-test-harness"
+  become: true
+  become_user: "{{ ansible_user }}"
+  environment:
+    HOME: "{{ ansible_env.HOME }}"
+  when: host_harness_pkg.stat.exists
+  tags: [install]

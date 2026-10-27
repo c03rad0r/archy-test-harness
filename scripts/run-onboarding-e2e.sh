@@ -24,7 +24,7 @@ set -uo pipefail
 
 HOST=""; DISK=""; PASSWORD=""; INJECT_KEY=""
 SSH_KEY="${HOME}/.ssh/id_fleet"
-SSH_USER=""; SSH_HOST=""
+SSH_HOST=""
 SSH_PORT=2222; WEB_PORT=8080; LOCAL_WEB=18080
 RAM=2048; CPUS=2
 EXPECT="${ARCHY_FIPS_VERSION:-0.5.3}"
@@ -50,7 +50,7 @@ done
 [ -n "$PASSWORD" ] || { echo "FAIL: --password required (sets the node admin password in the VM)" >&2; exit 2; }
 command -v node >/dev/null || { echo "FAIL: node not installed" >&2; exit 1; }
 
-SSH_USER="${HOST%@*}"; SSH_HOST="${HOST#*@}"
+SSH_HOST="${HOST#*@}"
 
 SSH_OPTS=(-o StrictHostKeyChecking=no -o ConnectTimeout=10)
 PROXY="ssh -o StrictHostKeyChecking=no -W %h:%p $HOST"

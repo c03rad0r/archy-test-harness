@@ -59,12 +59,15 @@ def test_there_is_exactly_one_canonical_runner():
     )
 
 
-def test_no_makefile_yet_and_that_is_intentional():
-    """A Makefile would be a second entry surface before the first is proven."""
-    assert not (HARNESS / "Makefile").exists(), (
-        "a Makefile was added; if it is a thin alias to run-profile.py that is fine, but "
-        "delete this test deliberately rather than by accident"
-    )
+def test_makefile_is_a_thin_alias_surface():
+    """The Makefile is now deliberate fleet IaC; it must stay a thin alias surface."""
+    makefile = HARNESS / "Makefile"
+    assert makefile.is_file(), "Makefile is the documented fleet entry point"
+    text = makefile.read_text()
+    for target in ("test", "build", "iso", "vm-install", "node-check", "media-soak"):
+        assert re.search(rf"^{target}:", text, re.M), f"Makefile is missing target {target}"
+    assert "run-profile.py" in text, "make test must route through the canonical runner"
+    assert "scripts/remote.sh" in text, "HOST= must route through remote.sh"
 
 
 def test_documented_blockers_are_numbered_and_unique():

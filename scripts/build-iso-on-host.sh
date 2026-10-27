@@ -24,6 +24,7 @@ set -uo pipefail
 
 REPO=""; REF="main"; WORK=""; EXPECT_FIPS=""
 KEEP=0
+BUILD_ONLY=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --repo)        REPO="${2:?}"; shift ;;
@@ -31,6 +32,7 @@ while [ $# -gt 0 ]; do
         --workdir)     WORK="${2:?}"; shift ;;
         --expect-fips) EXPECT_FIPS="${2:?}"; shift ;;
         --keep-source) KEEP=1 ;;
+        --build-only)  BUILD_ONLY=1 ;;
         *) echo "unknown flag: $1" >&2; exit 2 ;;
     esac
     shift
@@ -41,7 +43,9 @@ WORK="${WORK:-$HOME/archy-build}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "=== 0/4 preflight ==="
-"$HERE/build-host-check.sh" || { echo "FAIL: host not fit to build" >&2; exit 1; }
+check_args=()
+[ "$BUILD_ONLY" = 1 ] && check_args+=(--build-only)
+"$HERE/build-host-check.sh" "${check_args[@]}" || { echo "FAIL: host not fit to build" >&2; exit 1; }
 
 SHA="$(git -C "$REPO" rev-parse "$REF")"
 SHORT="$(git -C "$REPO" rev-parse --short "$REF")"

@@ -1,0 +1,19 @@
+---
+host_role: build
+kvm_required: false
+min_free_gb: "{{ 40 if host_role == 'vm' else 20 }}"
+min_ram_mb: 7000
+required_tools:
+  - git
+  - curl
+  - rsync
+  - podman
+  - qemu-system-x86_64
+  - qemu-img
+  - xorriso
+  - debootstrap
+  - cargo
+  - node
+  - npm
+  - python3
+  - socat
