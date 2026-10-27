@@ -4,7 +4,8 @@ REPO := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
 # SUT and artifacts. Paths are evaluated on the machine running the target;
 # with HOST=..., the remote make sees the remote HOME.
-ARCHY_REF ?= main
+REF ?=
+ARCHY_REF ?= $(if $(REF),$(REF),main)
 ARCHY_SUT ?=
 ARCHY_ISO ?=
 ARCHY_BIN ?=

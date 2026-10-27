@@ -52,7 +52,7 @@
 
 - name: Check required tools
   ansible.builtin.shell:
-    cmd: "command -v {{ item }} >/dev/null 2>&1"
+    cmd: "PATH=\"{{ ansible_env.HOME }}/.cargo/bin:$PATH\" command -v {{ item }} >/dev/null 2>&1"
   loop: "{{ required_tools }}"
   register: host_tool_check
   changed_when: false
@@ -83,6 +83,13 @@
       - qemu-system-x86
       - qemu-utils
       - xorriso
+      - squashfs-tools
+      - isolinux
+      - syslinux-common
+      - mtools
+      - grub-efi-amd64-bin
+      - grub-pc-bin
+      - grub-common
       - debootstrap
       - rsync
       - curl

@@ -10,6 +10,7 @@
 #
 # Usage: build-host-check.sh [--json]
 set -uo pipefail
+export PATH="$HOME/.cargo/bin:$PATH"
 
 JSON=0
 BUILD_ONLY=0
@@ -37,7 +38,7 @@ req() {
 have() { command -v "$1" >/dev/null 2>&1; }
 
 # --- tooling ---------------------------------------------------------------
-for tool in podman xorriso debootstrap qemu-img; do
+for tool in podman xorriso debootstrap qemu-img isolinux mksquashfs grub-mkrescue; do
     req "tool:$tool" "$(have "$tool" && echo 1 || echo 0)" "$(have "$tool" && command -v "$tool" || echo 'not installed')"
 done
 
@@ -72,7 +73,11 @@ req "mem:>=7000MB" "$( [ "$MEM_MB" -ge 7000 ] && echo 1 || echo 0 )" "${MEM_MB} 
 
 DISK_GB="$(df -BG --output=avail / 2>/dev/null | tail -1 | tr -dc '0-9')"
 # Budget: ISO 2.6 GB + worktree/target ~15 GB + a second ISO during verification.
-DISK_MIN=40
+if [ "$BUILD_ONLY" = 1 ]; then
+    DISK_MIN=30
+else
+    DISK_MIN=40
+fi
 req "disk:avail>=${DISK_MIN}GB" "$( [ "${DISK_GB:-0}" -ge "$DISK_MIN" ] && echo 1 || echo 0 )" "${DISK_GB:-0} GB free on /"
 
 # --- container runtime -----------------------------------------------------

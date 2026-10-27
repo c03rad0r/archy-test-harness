@@ -21,6 +21,8 @@
 #                          [--workdir ~/archy-build] [--expect-fips 0.5.3]
 #                          [--keep-source]
 set -uo pipefail
+[ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
+export PATH="$HOME/.cargo/bin:$PATH"
 
 REPO=""; REF="main"; WORK=""; EXPECT_FIPS=""
 KEEP=0
