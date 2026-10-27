@@ -49,8 +49,14 @@ check_args=()
 [ "$BUILD_ONLY" = 1 ] && check_args+=(--build-only)
 "$HERE/build-host-check.sh" "${check_args[@]}" || { echo "FAIL: host not fit to build" >&2; exit 1; }
 
-SHA="$(git -C "$REPO" rev-parse "$REF")"
-SHORT="$(git -C "$REPO" rev-parse --short "$REF")"
+git -C "$REPO" fetch --all --tags --prune >/dev/null 2>&1 || true
+if git -C "$REPO" rev-parse --verify --quiet "$REF" >/dev/null 2>&1; then
+  TARGET="$REF"
+else
+  TARGET="origin/$REF"
+fi
+SHA="$(git -C "$REPO" rev-parse "$TARGET")" || { echo "FAIL: unknown ref $REF" >&2; exit 1; }
+SHORT="$(git -C "$REPO" rev-parse --short "$TARGET")"
 echo "repo: $REPO"
 echo "ref:  $REF @ $SHORT"
 
