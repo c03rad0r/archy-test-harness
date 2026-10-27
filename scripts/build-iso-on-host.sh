@@ -85,6 +85,12 @@ do
   sed -i -E "s|^FROM rust:[^ ]+ as builder|FROM ${RUST_IMAGE} as builder|" "$dockerfile"
 done
 echo "backend builder image: $RUST_IMAGE"
+# The slim Rust image does not ship pkg-config/OpenSSL headers.
+GEN="$SRC/image-recipe/_archived/build-auto-installer-iso.sh"
+if [ -f "$GEN" ]; then
+  sed -i '/^WORKDIR \/build$/i RUN apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*' "$GEN"
+fi
+
 
 echo "=== 2/4 build the ISO (this takes ~15-25 min cold) ==="
 LOGF="$WORK/build-$SHORT.log"
