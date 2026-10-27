@@ -48,3 +48,18 @@ venue and the operator steps that remain.
 - `twonode` requires a real FIPS pair.
 - `hardware` requires a real installed IndeeHub app.
 - The 900 s duration is wall-clock UAT, not a unit test.
+
+## Toolchain pins are part of readiness
+
+The `fix/media-stream-deadline` branch uses `AtomicU64::try_update`
+(`core/archipelago/src/monitoring/store.rs`), which requires Rust 1.99. The
+image recipe's backend Dockerfile pins `rust:1.93-trixie`, so a stock ISO build
+fails with `use of unstable library feature atomic_try_update`.
+
+Before upstreaming, choose one:
+
+- replace `try_update` with a stable `fetch_update` loop, or
+- bump the image recipe's builder image and record the new minimum Rust.
+
+The harness accepts `ARCHY_RUST_IMAGE` for test builds so the rest of the
+pipeline can be exercised while that decision is pending.

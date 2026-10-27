@@ -1,6 +1,6 @@
 # Plan: Archipelago upstream PRs + fleet test infrastructure
 
-Status: harness IaC implemented; x240 build/tests green; ISO build running.
+Status: harness IaC implemented; x240 build/tests green; ISO build blocked on a Rust toolchain pin.
 Updated: 2026-10-27.
 
 This is the version-controlled plan. The operator checklist is at the end.
@@ -151,7 +151,7 @@ Yes, once the **integration build** is VM-validated:
 - [x] `make build HOST=x240` (debug, `fix/media-stream-deadline`)
 - [x] `make smoke HOST=x240` (44 PASS)
 - [x] `make media-local HOST=x240` (6 PASS, twonode NOT VERIFIED)
-- [ ] Build integration ISO on x240 or inr2
+- [~] Build ISO on x240: esptool fixed; backend needs Rust 1.99 vs Dockerfile 1.93
 - [ ] `make vm-install HOST=t440`
 - [ ] `make onboarding HOST=t440`
 - [ ] Install x280 from the same ISO
