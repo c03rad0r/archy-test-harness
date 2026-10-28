@@ -50,7 +50,7 @@ else
   TARGET="$REF"
 fi
 
-if [ -d "$WORKTREE/.git" ]; then
+if [ -e "$WORKTREE/.git" ]; then
   git -C "$WORKTREE" fetch --all --tags --prune
   git -C "$WORKTREE" checkout --detach "$TARGET"
 else
