@@ -7,6 +7,13 @@ production machine.
 Status: official ISO + fork-binary path. The custom ISO is still blocked on the
 `apps/` build-context bug.
 
+Current blockers:
+
+- The USB write needs sudo; run `make x280-usb CONFIRM=yes` in a terminal.
+- The fork binary is on x240 (`~/archy-bin/archipelago`), but x240 is currently
+  unreachable. Bring it back before Phase 3, or rebuild on another fleet host.
+- The production fleet-gateway x280 is not involved.
+
 ## Inputs
 
 ```text

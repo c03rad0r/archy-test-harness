@@ -1,6 +1,6 @@
 # Plan: Archipelago upstream PRs + fleet test infrastructure
 
-Status: harness IaC implemented; x240 build/tests green; ISO build running with test-only builder patches.
+Status: harness IaC + test-x280 runbook implemented; USB write and binary staging pending.
 Updated: 2026-10-27.
 
 This is the version-controlled plan. The operator checklist is at the end.
