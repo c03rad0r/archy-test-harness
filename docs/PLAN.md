@@ -102,7 +102,8 @@ public key fingerprint expected by the operator is
 
 ### Make targets
 
-See [`MAKE-TARGETS.md`](MAKE-TARGETS.md). `HOST=` runs over SSH via
+See [`MAKE-TARGETS.md`](MAKE-TARGETS.md). The test-x280 physical runbook is
+[`MANUAL-X280.md`](MANUAL-X280.md) and has a checklist. `HOST=` runs over SSH via
 `scripts/remote.sh`; an empty `HOST` runs locally. T14 is not a valid workload
 host.
 

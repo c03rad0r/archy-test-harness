@@ -77,3 +77,16 @@ make lint
 ```
 
 Runs shellcheck, yamllint, Ansible syntax check and Python compilation.
+
+## Test x280 manual runbook
+
+```bash
+make x280-runbook
+make x280-usb CONFIRM=yes
+make x280-deploy NODE=archipelago@<ip> BINARY=~/archy-bin/archipelago
+make x280-restore NODE=archipelago@<ip>
+```
+
+`x280-usb` writes the verified official ISO to `/dev/sdc` and checks the
+read-back. It refuses non-USB devices, mounted targets and disks over 100 GB.
+See [`MANUAL-X280.md`](MANUAL-X280.md) for the full runbook.

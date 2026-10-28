@@ -24,6 +24,10 @@ RUN_ID ?= latest
 OUT ?= $(HOME)/archy-handover.md
 URL ?=
 MINUTES ?= 16
+OFFICIAL_ISO ?= $(HOME)/.cache/ventoy/isos/archipelago-installer-1.9.0-alpha-unbundled-x86_64.iso
+X280_STICK ?= /dev/sdc
+X280_ISO_SHA256 ?= aad5f0350428976969043079a63b0e7a8264dcee2574526bd34719c798c750af
+BINARY ?= $(HOME)/archy-bin/archipelago
 RELEASE ?= 0
 JOBS ?=
 BUILD_ONLY ?= 0
@@ -35,7 +39,8 @@ PLAYBOOK := $(REPO)/playbooks/host.yml
 
 .PHONY: help lint host-check host-bootstrap build build-release test smoke critical \
         media media-local iso iso-check vm-install vm-run onboarding usb \
-        node-check media-soak report handover evidence pr-check remote
+        node-check media-soak report handover evidence pr-check remote \
+        x280-runbook x280-usb x280-deploy x280-restore
 
 help:
 	@printf '%s\n' \
@@ -54,6 +59,10 @@ help:
 	  '  make usb ARCHY_ISO=... STICK=/dev/sdc' \
 	  '  make node-check NODE=x280' \
 	  '  make media-soak NODE=x280 URL=https://... MINUTES=16' \
+	  '  make x280-runbook                # manual test runbook' \
+	  '  make x280-usb CONFIRM=yes        # write the official ISO to /dev/sdc' \
+	  '  make x280-deploy NODE=archipelago@IP BINARY=...' \
+	  '  make x280-restore NODE=archipelago@IP' \
 	  '  make report RUN_ID=<id> | handover | evidence' \
 	  '  make pr-check REF=<branch>       # smoke+critical+media(+iso)' \
 	  '  make lint                        # shellcheck/yamllint/ansible/python' \
@@ -175,3 +184,19 @@ remote:
 	@test -n "$(HOST)" || { echo "usage: make remote HOST=x240 CMD='make smoke'" >&2; exit 1; }
 	@test -n "$(CMD)" || { echo "CMD is required" >&2; exit 1; }
 	@$(REPO)/scripts/remote.sh "$(HOST)" "$(CMD)"
+
+x280-runbook:
+	@cat "$(REPO)/docs/MANUAL-X280.md"
+
+x280-usb:
+	@$(REPO)/scripts/write-installer-usb.sh \
+	  --iso "$(OFFICIAL_ISO)" --device "$(X280_STICK)" \
+	  --sha256 "$(X280_ISO_SHA256)" $(if $(filter yes,$(CONFIRM)),--yes)
+
+x280-deploy:
+	@test -n "$(NODE)" || { echo "usage: make x280-deploy NODE=archipelago@IP BINARY=..." >&2; exit 1; }
+	@$(REPO)/scripts/deploy-fork-binary.sh --node "$(NODE)" --binary "$(BINARY)"
+
+x280-restore:
+	@test -n "$(NODE)" || { echo "usage: make x280-restore NODE=archipelago@IP" >&2; exit 1; }
+	@$(REPO)/scripts/deploy-fork-binary.sh --node "$(NODE)" --restore
