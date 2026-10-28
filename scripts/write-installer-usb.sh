@@ -8,10 +8,12 @@
 #                                       [--sha256 HEX] [--yes]
 set -euo pipefail
 
+ORIG_ARGS=("$@")
 ISO=""
 DEV=""
 EXPECTED_SHA=""
 ASSUME_YES=0
+DRY_RUN=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -19,7 +21,8 @@ while [ $# -gt 0 ]; do
     --device) DEV=${2:?}; shift 2 ;;
     --sha256) EXPECTED_SHA=${2:?}; shift 2 ;;
     --yes) ASSUME_YES=1; shift ;;
-    -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
+    --dry-run) DRY_RUN=1; shift ;;
+    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -27,8 +30,8 @@ done
 [ -f "$ISO" ] || { echo "FAIL: ISO not found: ${ISO:-<none>}" >&2; exit 1; }
 [ -b "$DEV" ] || { echo "FAIL: not a block device: ${DEV:-<none>}" >&2; exit 1; }
 
-if [ "$(id -u)" -ne 0 ]; then
-  exec sudo "$0" "$@"
+if [ "$(id -u)" -ne 0 ] && [ "$DRY_RUN" != 1 ]; then
+  exec sudo "$0" "${ORIG_ARGS[@]}"
 fi
 
 DEV=$(readlink -f "$DEV")
@@ -53,6 +56,17 @@ if [ -n "$EXPECTED_SHA" ] && [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
 fi
 
 mapfile -t MOUNTS < <(lsblk -lnpo MOUNTPOINTS "$DEV" | sed '/^[[:space:]]*$/d')
+
+if [ "$DRY_RUN" = 1 ]; then
+  echo "DRY RUN"
+  echo "target: $DEV  $MODEL  $SERIAL  $SIZE bytes"
+  echo "iso:    $ISO"
+  echo "sha256: $ACTUAL_SHA"
+  echo "mounted: ${MOUNTS[*]:-none}"
+  echo "would write $ISO to $DEV and verify the read-back"
+  exit 0
+fi
+
 if [ "${#MOUNTS[@]}" -gt 0 ]; then
   if [ "$ASSUME_YES" != 1 ]; then
     echo "FAIL: $DEV is mounted at: ${MOUNTS[*]}" >&2

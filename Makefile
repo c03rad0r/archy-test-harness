@@ -27,6 +27,7 @@ MINUTES ?= 16
 OFFICIAL_ISO ?= $(HOME)/.cache/ventoy/isos/archipelago-installer-1.9.0-alpha-unbundled-x86_64.iso
 X280_STICK ?= /dev/sdc
 X280_ISO_SHA256 ?= aad5f0350428976969043079a63b0e7a8264dcee2574526bd34719c798c750af
+DRY_RUN ?= 0
 BINARY ?= $(HOME)/archy-bin/archipelago
 RELEASE ?= 0
 JOBS ?=
@@ -191,7 +192,7 @@ x280-runbook:
 x280-usb:
 	@$(REPO)/scripts/write-installer-usb.sh \
 	  --iso "$(OFFICIAL_ISO)" --device "$(X280_STICK)" \
-	  --sha256 "$(X280_ISO_SHA256)" $(if $(filter yes,$(CONFIRM)),--yes)
+	  --sha256 "$(X280_ISO_SHA256)" $(if $(filter yes,$(CONFIRM)),--yes) $(if $(filter 1,$(DRY_RUN)),--dry-run)
 
 x280-deploy:
 	@test -n "$(NODE)" || { echo "usage: make x280-deploy NODE=archipelago@IP BINARY=..." >&2; exit 1; }
