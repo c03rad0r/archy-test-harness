@@ -38,6 +38,7 @@ ANSIBLE ?= ansible-playbook
 INVENTORY := $(REPO)/inventory/hosts.yml
 PLAYBOOK := $(REPO)/playbooks/host.yml
 ONE_ENGINE_REF ?= feat/one-provisioning-engine
+ONE_ENGINE_REPO_URL ?= https://github.com/c03rad0r/archy-fork.git
 ONE_ENGINE_ARTIFACTS ?= $(REPO)/artifacts
 ONE_ENGINE_TARGET ?= x280_test
 ONE_ENGINE_ROUTER ?= gl_mt3000
@@ -211,7 +212,7 @@ x280-restore:
 
 # ---- one provisioning engine (tollgate-installer + Archy) --------------------
 one-engine-build:
-	@$(MAKE) build HOST=$(HOST) ARCHY_REF=$(ONE_ENGINE_REF) JOBS=$(JOBS)
+	@$(REPO)/scripts/remote.sh "$(HOST)" "ARCHY_SUT=\$$HOME/archy-one-engine ARCHY_REPO_URL=$(ONE_ENGINE_REPO_URL) make LOCAL=1 build ARCHY_REF=$(ONE_ENGINE_REF) JOBS=$(JOBS)"
 	@$(REPO)/scripts/build-one-engine-ui.sh $(if $(HOST),--host "$(HOST)")
 
 one-engine-package:
