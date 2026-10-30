@@ -228,6 +228,7 @@ one-engine-build:
 
 one-engine-package:
 	@$(REPO)/scripts/package-one-engine.sh $(if $(HOST),--host "$(HOST)") --out "$(ONE_ENGINE_ARTIFACTS)"
+	@tar -C "$(ONE_ENGINE_ARTIFACTS)" -czf "$(ONE_ENGINE_ARTIFACTS)/neode-ui.tgz" neode-ui
 
 one-engine-deploy:
 	@test -f "$(ONE_ENGINE_INSTALLER)" || { \
@@ -237,6 +238,7 @@ one-engine-deploy:
 	  -e target="$(ONE_ENGINE_TARGET)" \
 	  -e archy_binary_src="$(ONE_ENGINE_ARTIFACTS)/archipelago" \
 	  -e archy_ui_src="$(ONE_ENGINE_ARTIFACTS)/neode-ui" \
+	  -e archy_ui_archive_src="$(ONE_ENGINE_ARTIFACTS)/neode-ui.tgz" \
 	  -e tollgate_installer_src="$(ONE_ENGINE_INSTALLER)"
 
 one-engine-check:

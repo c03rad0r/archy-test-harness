@@ -15,6 +15,14 @@
   register: archy_ui_stat
   tags: [archy, ui, check]
 
+- name: Locate the web UI archive on the controller
+  ansible.builtin.stat:
+    path: "{{ archy_ui_archive_src }}"
+  delegate_to: localhost
+  become: false
+  register: archy_ui_archive_stat
+  tags: [archy, ui, check]
+
 - name: Require the backend and UI artifacts
   ansible.builtin.assert:
     that:
@@ -22,9 +30,11 @@
       - archy_binary_stat.stat.isreg
       - archy_ui_stat.stat.exists
       - archy_ui_stat.stat.isdir
+      - archy_ui_archive_stat.stat.exists
+      - archy_ui_archive_stat.stat.isreg
     fail_msg: >-
-      Missing {{ archy_binary_src }} or {{ archy_ui_src }}. Run the
-      one-engine build/package targets first.
+      Missing {{ archy_binary_src }}, {{ archy_ui_src }} or
+      {{ archy_ui_archive_src }}. Run the one-engine build/package targets first.
   tags: [archy, check]
 
 - name: Back up the stock backend binary
@@ -61,14 +71,28 @@
   when: not archy_ui_stock.stat.exists
   tags: [archy, ui]
 
-- name: Install the branch web UI
+- name: Copy the branch web UI archive
   ansible.builtin.copy:
-    src: "{{ archy_ui_src }}/"
+    src: "{{ archy_ui_archive_src }}"
+    dest: /tmp/archy-ui.tgz
+    mode: "0644"
+  tags: [archy, ui]
+
+- name: Install the branch web UI from the archive
+  ansible.builtin.unarchive:
+    src: /tmp/archy-ui.tgz
     dest: "{{ archy_web_root }}/"
+    remote_src: true
+    extra_opts:
+      - --strip-components=1
     owner: archipelago
     group: archipelago
-    mode: "0644"
-    directory_mode: "0755"
+  tags: [archy, ui]
+
+- name: Remove the web UI archive
+  ansible.builtin.file:
+    path: /tmp/archy-ui.tgz
+    state: absent
   tags: [archy, ui]
 
 - name: Validate nginx configuration

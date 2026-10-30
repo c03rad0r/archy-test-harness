@@ -1,6 +1,7 @@
 ---
 archy_binary_src: "{{ playbook_dir }}/../artifacts/archipelago"
 archy_ui_src: "{{ playbook_dir }}/../artifacts/neode-ui"
+archy_ui_archive_src: "{{ playbook_dir }}/../artifacts/neode-ui.tgz"
 archy_binary_dest: /usr/local/bin/archipelago
 archy_web_root: /opt/archipelago/web-ui
 archy_service: archipelago
