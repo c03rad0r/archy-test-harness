@@ -41,7 +41,7 @@ package_local() {
 if [ -n "$HOST" ]; then
   "$REPO/scripts/remote.sh" "$HOST" '
     set -e
-    SUT=$(sed -n "s/^ARCHY_SUT=//p" "$HOME/.cache/archy-test-harness/sut.env" | tail -1)
+    SUT=$(sed -n "s/^export ARCHY_SUT=//p" "$HOME/.cache/archy-test-harness/sut.env" | tail -1)
     [ -n "$SUT" ] || { echo "FAIL: no ARCHY_SUT in ~/.cache/archy-test-harness/sut.env" >&2; exit 1; }
     BIN="$SUT/core/target/debug/archipelago"
     [ -f "$BIN" ] || { echo "FAIL: missing $BIN" >&2; exit 1; }
@@ -63,7 +63,7 @@ if [ -n "$HOST" ]; then
 else
   SUT=${ARCHY_SUT:-}
   if [ -z "$SUT" ] && [ -r "$HOME/.cache/archy-test-harness/sut.env" ]; then
-    SUT=$(sed -n 's/^ARCHY_SUT=//p' "$HOME/.cache/archy-test-harness/sut.env" | tail -1)
+    SUT=$(sed -n 's/^export ARCHY_SUT=//p' "$HOME/.cache/archy-test-harness/sut.env" | tail -1)
   fi
   package_local "$SUT"
 fi

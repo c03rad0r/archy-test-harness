@@ -20,7 +20,7 @@ SUT_ENV="$HOME/.cache/archy-test-harness/sut.env"
 if [ -n "$HOST" ]; then
   "$REPO/scripts/remote.sh" "$HOST" '
     set -e
-    SUT=$(sed -n "s/^ARCHY_SUT=//p" "$HOME/.cache/archy-test-harness/sut.env" | tail -1)
+    SUT=$(sed -n "s/^export ARCHY_SUT=//p" "$HOME/.cache/archy-test-harness/sut.env" | tail -1)
     [ -n "$SUT" ] || { echo "FAIL: no ARCHY_SUT in ~/.cache/archy-test-harness/sut.env" >&2; exit 1; }
     cd "$SUT/neode-ui"
     npm run build
@@ -30,7 +30,7 @@ fi
 
 SUT=${ARCHY_SUT:-}
 if [ -z "$SUT" ] && [ -r "$SUT_ENV" ]; then
-  SUT=$(sed -n 's/^ARCHY_SUT=//p' "$SUT_ENV" | tail -1)
+  SUT=$(sed -n 's/^export ARCHY_SUT=//p' "$SUT_ENV" | tail -1)
 fi
 [ -n "$SUT" ] || { echo "FAIL: set ARCHY_SUT or pass --host" >&2; exit 1; }
 cd "$SUT/neode-ui"
