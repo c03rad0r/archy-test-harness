@@ -136,6 +136,16 @@ test('first load is discovery-only and the status is not the missing UCI mirror'
   await expect(card).not.toContainText('0 sat per 0 milliseconds')
   await expect(card).not.toContainText('daemon may need a restart')
 
+  // Catch a regression that keeps the price but reads the wrong metric:
+  // a bytes-metered lab router would look like "Time / 367 minutes".
+  const expectedMetric = process.env.ARCHY_EXPECT_METRIC
+  if (expectedMetric === 'bytes') {
+    await expect(card).toContainText('Data')
+    await expect(card).toContainText(/\b21 MB\b/)
+  } else if (expectedMetric === 'milliseconds') {
+    await expect(card).toContainText('Time')
+  }
+
   await expect(card.getByTestId('details-summary')).toBeVisible()
   await card.getByTestId('details-summary').click()
   await expect(card.getByTestId('tollgate-details')).toHaveJSProperty('open', true)

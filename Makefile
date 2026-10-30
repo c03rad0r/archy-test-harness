@@ -50,6 +50,7 @@ ROUTER_FINGERPRINT ?=
 PLAYWRIGHT_URL ?= http://192.168.50.199
 PLAYWRIGHT_NODE ?= archipelago@192.168.50.199
 PLAYWRIGHT_TOKEN ?=
+PLAYWRIGHT_EXPECT_METRIC ?= bytes
 
 .PHONY: help lint host-check host-bootstrap build build-release test smoke critical \
         media media-local iso iso-check vm-install vm-run onboarding usb \
@@ -284,4 +285,5 @@ playwright-test:
 	    trap './scripts/archy-playwright-token.sh delete' EXIT; \
 	  fi; \
 	  ARCHY_BASE_URL="$(PLAYWRIGHT_URL)" ARCHY_TEST_TOKEN="$$TOKEN" \
+	    ARCHY_EXPECT_METRIC="$(PLAYWRIGHT_EXPECT_METRIC)" \
 	    npx playwright test
