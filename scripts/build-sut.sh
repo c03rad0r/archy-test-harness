@@ -56,6 +56,17 @@ if [ -e "$WORKTREE/.git" ]; then
     exit 1
   fi
   git -C "$WORKTREE" fetch --all --tags --prune
+  # The SUT's origin may not be the fork that carries REF. The worktree often
+  # has a different origin (e.g. the c03rad0r fork); resolve there before
+  # giving git a branch name it will read as a pathspec.
+  if ! git -C "$WORKTREE" rev-parse --verify --quiet "$TARGET" >/dev/null; then
+    if git -C "$WORKTREE" rev-parse --verify --quiet "origin/$REF" >/dev/null; then
+      TARGET="origin/$REF"
+    else
+      echo "FAIL: ref $REF not found in $WORKTREE (tried $TARGET and origin/$REF)" >&2
+      exit 1
+    fi
+  fi
   git -C "$WORKTREE" checkout --detach "$TARGET"
 else
   mkdir -p "$(dirname "$WORKTREE")"
