@@ -11,6 +11,9 @@ venv/
 .ruff_cache/
 *.egg-info/
 
+# ---- one-engine build artifacts (large binaries) ------------------------------------
+artifacts/
+
 # ---- local --------------------------------------------------------------------------
 .env
 *.local.yaml

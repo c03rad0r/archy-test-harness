@@ -1,0 +1,41 @@
+---
+# Read-only checks. Router provisioning belongs to tollgate-installer.
+- name: Read-only TollGate router checks
+  hosts: "{{ router | default('gl_mt3000') }}"
+  become: false
+  gather_facts: false
+  tasks:
+    - name: Wireless SSIDs and disabled flags
+      ansible.builtin.raw: "uci show wireless 2>/dev/null | grep -E 'ssid=|disabled='"
+      register: router_wireless
+      changed_when: false
+      failed_when: false
+
+    - name: Configured mints
+      ansible.builtin.raw: "jq -r '.accepted_mints[].url' /etc/tollgate/config.json 2>/dev/null || true"
+      register: router_mints
+      changed_when: false
+      failed_when: false
+
+    - name: Advertised price per mint
+      ansible.builtin.raw: >-
+        curl -sS -m 5 http://127.0.0.1:2121/ 2>/dev/null
+        | jq -r '.tags[] | select(.[0]=="price_per_step") | .[4] + " " + .[2]' 2>/dev/null
+        || true
+      register: router_ads
+      changed_when: false
+      failed_when: false
+
+    - name: Daemon status
+      ansible.builtin.raw: "tollgate --json status 2>/dev/null || true"
+      register: router_status
+      changed_when: false
+      failed_when: false
+
+    - name: Report router state
+      ansible.builtin.debug:
+        msg:
+          wireless: "{{ router_wireless.stdout_lines | default([]) }}"
+          configured_mints: "{{ router_mints.stdout_lines | default([]) }}"
+          advertised: "{{ router_ads.stdout_lines | default([]) }}"
+          status: "{{ router_status.stdout_lines | default([]) }}"

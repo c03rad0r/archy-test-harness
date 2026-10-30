@@ -37,11 +37,18 @@ BECOME_FLAG ?=
 ANSIBLE ?= ansible-playbook
 INVENTORY := $(REPO)/inventory/hosts.yml
 PLAYBOOK := $(REPO)/playbooks/host.yml
+ONE_ENGINE_REF ?= feat/one-provisioning-engine
+ONE_ENGINE_ARTIFACTS ?= $(REPO)/artifacts
+ONE_ENGINE_TARGET ?= x280_test
+ONE_ENGINE_ROUTER ?= gl_mt3000
+ONE_ENGINE_INSTALLER ?= $(ONE_ENGINE_ARTIFACTS)/tollgate-installer-linux-amd64
 
 .PHONY: help lint host-check host-bootstrap build build-release test smoke critical \
         media media-local iso iso-check vm-install vm-run onboarding usb \
         node-check media-soak report handover evidence pr-check remote \
-        x280-runbook x280-usb x280-deploy x280-restore
+        x280-runbook x280-usb x280-deploy x280-restore \
+        one-engine-build one-engine-package one-engine-deploy one-engine-check \
+        tollgate-router-check
 
 help:
 	@printf '%s\n' \
@@ -201,3 +208,29 @@ x280-deploy:
 x280-restore:
 	@test -n "$(NODE)" || { echo "usage: make x280-restore NODE=archipelago@IP" >&2; exit 1; }
 	@$(REPO)/scripts/deploy-fork-binary.sh --node "$(NODE)" --restore
+
+# ---- one provisioning engine (tollgate-installer + Archy) --------------------
+one-engine-build:
+	@$(MAKE) build HOST=$(HOST) ARCHY_REF=$(ONE_ENGINE_REF) JOBS=$(JOBS)
+	@$(REPO)/scripts/build-one-engine-ui.sh $(if $(HOST),--host "$(HOST)")
+
+one-engine-package:
+	@$(REPO)/scripts/package-one-engine.sh $(if $(HOST),--host "$(HOST)") --out "$(ONE_ENGINE_ARTIFACTS)"
+
+one-engine-deploy:
+	@test -f "$(ONE_ENGINE_INSTALLER)" || { \
+	  echo "missing $(ONE_ENGINE_INSTALLER) — build the installer branch and place it there" >&2; \
+	  exit 1; }
+	@$(ANSIBLE) -i "$(INVENTORY)" "$(REPO)/playbooks/node.yml" \
+	  -e target="$(ONE_ENGINE_TARGET)" \
+	  -e archy_binary_src="$(ONE_ENGINE_ARTIFACTS)/archipelago" \
+	  -e archy_ui_src="$(ONE_ENGINE_ARTIFACTS)/neode-ui" \
+	  -e tollgate_installer_src="$(ONE_ENGINE_INSTALLER)"
+
+one-engine-check:
+	@$(ANSIBLE) -i "$(INVENTORY)" "$(REPO)/playbooks/node.yml" \
+	  -e target="$(ONE_ENGINE_TARGET)" --tags smoke
+
+tollgate-router-check:
+	@$(ANSIBLE) -i "$(INVENTORY)" "$(REPO)/playbooks/router-check.yml" \
+	  -e router="$(ONE_ENGINE_ROUTER)" --ask-pass

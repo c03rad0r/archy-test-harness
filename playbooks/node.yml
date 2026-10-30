@@ -1,0 +1,14 @@
+---
+- name: One-engine Archy node (backend + UI + tollgate-installer)
+  hosts: "{{ target | default('x280_test') }}"
+  become: true
+  gather_facts: true
+  vars:
+    tollgate_installer_port: 8099
+  roles:
+    - role: tollgate_installer
+      tags: [installer]
+    - role: archy_node
+      tags: [archy]
+    - role: tollgate_smoke
+      tags: [smoke]

@@ -1,0 +1,100 @@
+---
+- name: Locate the Archy backend binary on the controller
+  ansible.builtin.stat:
+    path: "{{ archy_binary_src }}"
+  delegate_to: localhost
+  become: false
+  register: archy_binary_stat
+  tags: [archy, backend, check]
+
+- name: Locate the built web UI on the controller
+  ansible.builtin.stat:
+    path: "{{ archy_ui_src }}"
+  delegate_to: localhost
+  become: false
+  register: archy_ui_stat
+  tags: [archy, ui, check]
+
+- name: Require the backend and UI artifacts
+  ansible.builtin.assert:
+    that:
+      - archy_binary_stat.stat.exists
+      - archy_binary_stat.stat.isreg
+      - archy_ui_stat.stat.exists
+      - archy_ui_stat.stat.isdir
+    fail_msg: >-
+      Missing {{ archy_binary_src }} or {{ archy_ui_src }}. Run the
+      one-engine build/package targets first.
+  tags: [archy, check]
+
+- name: Back up the stock backend binary
+  ansible.builtin.stat:
+    path: "{{ archy_binary_dest }}.stock"
+  register: archy_binary_stock
+  tags: [archy, backend]
+
+- name: Copy the stock backend aside once
+  ansible.builtin.command:
+    cmd: "cp -a {{ archy_binary_dest }} {{ archy_binary_dest }}.stock"
+  when: not archy_binary_stock.stat.exists
+  tags: [archy, backend]
+
+- name: Install the branch backend binary
+  ansible.builtin.copy:
+    src: "{{ archy_binary_src }}"
+    dest: "{{ archy_binary_dest }}"
+    owner: root
+    group: root
+    mode: "0755"
+    backup: false
+  tags: [archy, backend]
+
+- name: Back up the stock web UI once
+  ansible.builtin.stat:
+    path: "{{ archy_web_root }}.stock"
+  register: archy_ui_stock
+  tags: [archy, ui]
+
+- name: Copy the stock web UI aside once
+  ansible.builtin.command:
+    cmd: "cp -a {{ archy_web_root }} {{ archy_web_root }}.stock"
+  when: not archy_ui_stock.stat.exists
+  tags: [archy, ui]
+
+- name: Install the branch web UI
+  ansible.builtin.copy:
+    src: "{{ archy_ui_src }}/"
+    dest: "{{ archy_web_root }}/"
+    owner: archipelago
+    group: archipelago
+    mode: "0644"
+    directory_mode: "0755"
+  tags: [archy, ui]
+
+- name: Validate nginx configuration
+  ansible.builtin.command:
+    cmd: nginx -t
+  changed_when: false
+  tags: [archy, ui]
+
+- name: Reload nginx
+  ansible.builtin.systemd:
+    name: "{{ archy_nginx_service }}"
+    state: reloaded
+  tags: [archy, ui]
+
+- name: Restart the Archy backend
+  ansible.builtin.systemd:
+    name: "{{ archy_service }}"
+    state: restarted
+  tags: [archy, backend]
+
+- name: Wait for the Archy UI
+  ansible.builtin.uri:
+    url: "http://127.0.0.1/"
+    status_code: 200
+  register: archy_ui_health
+  retries: 30
+  delay: 1
+  until: archy_ui_health.status == 200
+  tags: [archy, check]

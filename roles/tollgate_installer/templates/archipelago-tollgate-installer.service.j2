@@ -1,0 +1,26 @@
+[Unit]
+Description=Archy TollGate installer (headless API, loopback only)
+Documentation=https://github.com/OpenTollGate/tollgate-installer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=archipelago
+Group=archipelago
+Environment=HOME={{ tollgate_installer_state_dir }}
+Environment=TOLLGATE_CREDENTIAL_FILE={{ tollgate_installer_state_dir }}/root-credentials
+Environment=TOLLGATE_BRAND={{ tollgate_installer_brand }}
+Environment=TOLLGATE_PRIVATE_NYM={{ tollgate_installer_private_nym }}
+Environment=TOLLGATE_SSID_PREFIXES_FILE=/etc/tollgate/ssid-prefixes
+ExecStart={{ tollgate_installer_dest }} --bind 127.0.0.1 --port {{ tollgate_installer_port }}
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths={{ tollgate_installer_state_dir }}
+StateDirectory=archipelago/tollgate-installer
+
+[Install]
+WantedBy=multi-user.target

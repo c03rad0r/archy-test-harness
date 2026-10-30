@@ -1,0 +1,71 @@
+---
+- name: Locate the tollgate-installer binary on the controller
+  ansible.builtin.stat:
+    path: "{{ tollgate_installer_src }}"
+  delegate_to: localhost
+  become: false
+  register: tollgate_installer_src_stat
+  tags: [installer, check]
+
+- name: Require the tollgate-installer binary
+  ansible.builtin.assert:
+    that:
+      - tollgate_installer_src_stat.stat.exists
+      - tollgate_installer_src_stat.stat.isreg
+    fail_msg: >-
+      Missing {{ tollgate_installer_src }}. Build the Archy installer branch
+      first (see docs/MANUAL-X280.md and the one-engine targets).
+  tags: [installer, check]
+
+- name: Ensure the installer state directory exists
+  ansible.builtin.file:
+    path: "{{ tollgate_installer_state_dir }}"
+    state: directory
+    owner: archipelago
+    group: archipelago
+    mode: "0750"
+  tags: [installer]
+
+- name: Install the tollgate-installer binary
+  ansible.builtin.copy:
+    src: "{{ tollgate_installer_src }}"
+    dest: "{{ tollgate_installer_dest }}"
+    owner: root
+    group: root
+    mode: "0755"
+  tags: [installer]
+
+- name: Install the tollgate-installer unit
+  ansible.builtin.template:
+    src: archipelago-tollgate-installer.service.j2
+    dest: "{{ tollgate_installer_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  tags: [installer]
+
+- name: Enable and restart the tollgate-installer service
+  ansible.builtin.systemd:
+    name: "{{ tollgate_installer_service }}"
+    daemon_reload: true
+    enabled: true
+    state: restarted
+  tags: [installer]
+
+- name: Wait for the installer API
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ tollgate_installer_port }}/api/config"
+    return_content: true
+    status_code: 200
+  register: tollgate_installer_config
+  retries: 30
+  delay: 1
+  until: tollgate_installer_config.status == 200
+  tags: [installer, check]
+
+- name: Report the installer version
+  ansible.builtin.debug:
+    msg: >-
+      tollgate-installer {{ tollgate_installer_config.json.installer_version | default('unknown') }}
+      feed {{ tollgate_installer_config.json.feed_release_tag | default('unknown') }}
+  tags: [installer, check]

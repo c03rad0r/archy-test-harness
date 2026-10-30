@@ -1,0 +1,9 @@
+---
+tollgate_installer_src: "{{ playbook_dir }}/../artifacts/tollgate-installer-linux-amd64"
+tollgate_installer_dest: /usr/local/bin/tollgate-installer
+tollgate_installer_port: 8099
+tollgate_installer_state_dir: /var/lib/archipelago/tollgate-installer
+tollgate_installer_service: archipelago-tollgate-installer
+tollgate_installer_unit_path: "/etc/systemd/system/{{ tollgate_installer_service }}.service"
+tollgate_installer_brand: archipelago
+tollgate_installer_private_nym: noderunner-private

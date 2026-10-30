@@ -1,0 +1,25 @@
+---
+- name: Read the installer config
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ tollgate_installer_port | default(8099) }}/api/config"
+    return_content: true
+    status_code: 200
+  register: tollgate_smoke_config
+  tags: [smoke]
+
+- name: Scan the LAN through the installer
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ tollgate_installer_port | default(8099) }}/api/scan"
+    return_content: true
+    status_code: 200
+    timeout: 60
+  register: tollgate_smoke_scan
+  tags: [smoke]
+
+- name: Report the one-engine smoke result
+  ansible.builtin.debug:
+    msg:
+      installer_version: "{{ tollgate_smoke_config.json.installer_version | default('unknown') }}"
+      feed_release_tag: "{{ tollgate_smoke_config.json.feed_release_tag | default('unknown') }}"
+      router_candidates: "{{ tollgate_smoke_scan.json.routers | default([]) | length }}"
+  tags: [smoke]
