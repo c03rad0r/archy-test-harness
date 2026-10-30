@@ -271,6 +271,28 @@ test('wallet status is explicit and a zero balance cannot be drained', async ({ 
   await expect(drain).toBeDisabled()
 })
 
+test('vanilla OpenWrt panel inspects the image and stays gated', async ({ page }) => {
+  await connectLabGateway(page)
+
+  const advanced = page.getByTestId('advanced-flash')
+  await expect(advanced).toBeVisible()
+  await dismissCompanionOverlay(page)
+  await advanced.getByTestId('flash-open').click()
+
+  const modal = page.getByTestId('flash-modal')
+  await expect(modal).toBeVisible()
+  await expect(modal.getByTestId('flash-board')).toHaveText(/glinet_gl-mt3000/, {
+    timeout: 90_000,
+  })
+  await expect(modal.getByTestId('flash-start')).toBeDisabled()
+
+  await modal.getByTestId('flash-confirmation').fill('glinet_gl-mt3000')
+  await modal.getByTestId('flash-ack').check()
+  // Deliberately never click flash-start in the regression lane.
+  await modal.getByText('Close', { exact: true }).click()
+  await expect(modal).toHaveCount(0)
+})
+
 test('host key is shown before trust, or already trusted', async ({ page }) => {
   await connectLabGateway(page)
 
