@@ -19,7 +19,9 @@
 
     - name: Advertised price per mint
       ansible.builtin.raw: >-
-        curl -sS -m 5 http://127.0.0.1:2121/ 2>/dev/null
+        (curl -fsS -m 5 http://127.0.0.1:2121/ 2>/dev/null
+        || uclient-fetch -q -O - -T 5 http://127.0.0.1:2121/ 2>/dev/null
+        || wget -q -O - -T 5 http://127.0.0.1:2121/ 2>/dev/null)
         | jq -r '.tags[] | select(.[0]=="price_per_step") | .[4] + " " + .[2]' 2>/dev/null
         || true
       register: router_ads
