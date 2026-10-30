@@ -47,13 +47,17 @@ ROUTER_IP ?= 192.168.1.1
 ROUTER_VERSION ?= 25.12.5
 ROUTER_PASSWORD_FILE ?= $(HOME)/.config/archy-lab/gl-mt3000.pass
 ROUTER_FINGERPRINT ?=
+PLAYWRIGHT_URL ?= http://192.168.50.199
+PLAYWRIGHT_NODE ?= archipelago@192.168.50.199
+PLAYWRIGHT_TOKEN ?=
 
 .PHONY: help lint host-check host-bootstrap build build-release test smoke critical \
         media media-local iso iso-check vm-install vm-run onboarding usb \
         node-check media-soak report handover evidence pr-check remote \
         x280-runbook x280-usb x280-deploy x280-restore \
         one-engine-build one-engine-package one-engine-deploy one-engine-check \
-        tollgate-router-check router-flash-info router-flash
+        tollgate-router-check router-flash-info router-flash \
+        playwright-install playwright-test
 
 help:
 	@printf '%s\n' \
@@ -78,6 +82,8 @@ help:
 	  '  make x280-restore NODE=archipelago@IP' \
 	  '  make report RUN_ID=<id> | handover | evidence' \
 	  '  make pr-check REF=<branch>       # smoke+critical+media(+iso)' \
+	  '  make playwright-install          # install the Playwright runner' \
+	  '  make playwright-test PLAYWRIGHT_URL=http://192.168.50.199' \
 	  '  make lint                        # shellcheck/yamllint/ansible/python' \
 	  '' \
 	  'HOST= runs the target over SSH via scripts/remote.sh. Empty HOST' \
@@ -260,3 +266,22 @@ router-flash:
 	  -e router_password="$$(cat "$(ROUTER_PASSWORD_FILE)")" \
 	  -e router_fingerprint="$(ROUTER_FINGERPRINT)" \
 	  -e router_confirm=true
+
+# ---- Playwright regression lane (deployed Archy UI) ---------------------------
+playwright-install:
+	cd "$(REPO)" && npm install
+	cd "$(REPO)" && npx playwright install chromium
+
+playwright-test:
+	@command -v node >/dev/null || { echo "node not found" >&2; exit 1; }
+	@test -d "$(REPO)/node_modules/@playwright/test" || { \
+	  echo "Playwright is not installed; run make playwright-install" >&2; exit 1; }
+	@cd "$(REPO)" && \
+	  export PLAYWRIGHT_NODE="$(PLAYWRIGHT_NODE)"; \
+	  TOKEN="$(PLAYWRIGHT_TOKEN)"; \
+	  if [ -z "$$TOKEN" ]; then \
+	    TOKEN=$$(./scripts/archy-playwright-token.sh create); \
+	    trap './scripts/archy-playwright-token.sh delete' EXIT; \
+	  fi; \
+	  ARCHY_BASE_URL="$(PLAYWRIGHT_URL)" ARCHY_TEST_TOKEN="$$TOKEN" \
+	    npx playwright test

@@ -4,9 +4,12 @@
   "private": true,
   "description": "Browser-driven E2E lanes for Archipelago. The Python suite is the main harness; this package exists so the Playwright driver has a declared, installable dependency instead of borrowing another repo's node_modules.",
   "scripts": {
-    "onboarding": "node tests/onboarding/onboard.cjs"
+    "onboarding": "node tests/onboarding/onboard.cjs",
+    "test:playwright": "playwright test",
+    "playwright:install": "playwright install chromium"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "playwright": "^1.60.0"
   }
 }
