@@ -51,6 +51,7 @@ PLAYWRIGHT_URL ?= http://192.168.50.199
 PLAYWRIGHT_NODE ?= archipelago@192.168.50.199
 PLAYWRIGHT_TOKEN ?=
 PLAYWRIGHT_EXPECT_METRIC ?= bytes
+PORTAL_IP ?= 192.168.99.1
 
 .PHONY: help lint host-check host-bootstrap build build-release test smoke critical \
         media media-local iso iso-check vm-install vm-run onboarding usb \
@@ -58,7 +59,7 @@ PLAYWRIGHT_EXPECT_METRIC ?= bytes
         x280-runbook x280-usb x280-deploy x280-restore \
         one-engine-build one-engine-package one-engine-deploy one-engine-check \
         tollgate-router-check router-flash-info router-flash \
-        playwright-install playwright-test
+        playwright-install playwright-test paid-client-check regress
 
 help:
 	@printf '%s\n' \
@@ -85,6 +86,8 @@ help:
 	  '  make pr-check REF=<branch>       # smoke+critical+media(+iso)' \
 	  '  make playwright-install          # install the Playwright runner' \
 	  '  make playwright-test PLAYWRIGHT_URL=http://192.168.50.199' \
+	  '  make paid-client-check PORTAL_IP=192.168.99.1  # run from paid SSID' \
+	  '  make regress                     # lint + node smoke + Playwright' \
 	  '  make lint                        # shellcheck/yamllint/ansible/python' \
 	  '' \
 	  'HOST= runs the target over SSH via scripts/remote.sh. Empty HOST' \
@@ -289,3 +292,12 @@ playwright-test:
 	  ARCHY_BASE_URL="$(PLAYWRIGHT_URL)" ARCHY_TEST_TOKEN="$$TOKEN" \
 	    ARCHY_EXPECT_METRIC="$(PLAYWRIGHT_EXPECT_METRIC)" \
 	    npx playwright test
+
+
+# ---- client-side paid-network evidence ---------------------------------------
+paid-client-check:
+	@$(REPO)/scripts/paid-client-smoke.sh "$(PORTAL_IP)"
+
+regress: lint
+	@$(MAKE) one-engine-check ONE_ENGINE_TARGET="$(ONE_ENGINE_TARGET)"
+	@$(MAKE) playwright-test PLAYWRIGHT_URL="$(PLAYWRIGHT_URL)"

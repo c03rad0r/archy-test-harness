@@ -258,6 +258,19 @@ test('internet uplink exposes password-protected Wi-Fi without changing it', asy
   }
 })
 
+test('wallet status is explicit and a zero balance cannot be drained', async ({ page }) => {
+  await connectLabGateway(page)
+
+  const wallet = page.getByTestId('wallet-card')
+  await expect(wallet).toBeVisible()
+  await expect(wallet).toContainText(/Wallet ready|Wallet degraded/)
+
+  const drain = page.getByTestId('wallet-drain')
+  await expect(drain).toBeVisible()
+  await expect(drain).toContainText('Drain to Archy wallet')
+  await expect(drain).toBeDisabled()
+})
+
 test('host key is shown before trust, or already trusted', async ({ page }) => {
   await connectLabGateway(page)
 

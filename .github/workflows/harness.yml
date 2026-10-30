@@ -1,0 +1,33 @@
+name: harness
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install lint dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible-core yamllint
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+      - name: Lint
+        run: make lint
+
+  playwright:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: [self-hosted, archy-lab]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Playwright
+        run: make playwright-install
+      - name: Run the gateway regression lane
+        run: make playwright-test PLAYWRIGHT_URL=http://192.168.50.199
