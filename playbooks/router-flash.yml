@@ -1,0 +1,7 @@
+---
+- name: Vanilla OpenWrt clean-slate flash through tollgate-installer
+  hosts: "{{ target | default('x280_test') }}"
+  become: false
+  gather_facts: true
+  roles:
+    - router_flash

@@ -1,0 +1,102 @@
+---
+- name: Trust the router host key when a fingerprint is supplied
+  ansible.builtin.uri:
+    url: "{{ installer_base }}/api/trust-host-key"
+    method: POST
+    body_format: json
+    body:
+      ip: "{{ router_ip }}"
+      fingerprint: "{{ router_fingerprint }}"
+    status_code: 200
+  when: router_fingerprint | length > 0
+
+- name: Inspect the clean-slate image (read-only)
+  ansible.builtin.uri:
+    url: "{{ installer_base }}/api/clean-slate-info"
+    method: POST
+    body_format: json
+    body:
+      ip: "{{ router_ip }}"
+      password: "{{ router_password }}"
+      version: "{{ router_version }}"
+    status_code: 200
+  register: router_flash_info
+
+- name: Show the detected board and image
+  ansible.builtin.debug:
+    msg:
+      board: "{{ router_flash_info.json.board }}"
+      image_url: "{{ router_flash_info.json.image_url }}"
+      sha256: "{{ router_flash_info.json.sha256 }}"
+      router_ip: "{{ router_ip }}"
+      version: "{{ router_version }}"
+
+- name: Info-only run (no flash)
+  ansible.builtin.debug:
+    msg: "Info-only: pass router_confirm=true (or CONFIRM=yes) to flash."
+  when: not (router_confirm | bool)
+
+- name: Find a wired interface with carrier and a 192.168.1.x address
+  ansible.builtin.shell: |
+    for i in /sys/class/net/*; do
+      name=${i##*/}
+      [ "$name" = lo ] && continue
+      [ "$(cat "$i/carrier" 2>/dev/null)" = 1 ] || continue
+      ip -4 -o addr show dev "$name" 2>/dev/null | grep -q '192\.168\.1\.' || continue
+      echo "$name"
+      exit 0
+    done
+    exit 1
+  register: router_flash_wired
+  changed_when: false
+  failed_when: false
+  when: router_confirm | bool
+
+- name: Require a wired 192.168.1.x interface with carrier
+  ansible.builtin.assert:
+    that:
+      - router_flash_wired.rc == 0
+    fail_msg: >-
+      No wired interface with carrier has a 192.168.1.x address. After
+      sysupgrade -n the router only answers on 192.168.1.1. Plug its LAN port
+      into the node's Ethernet, bring the link up, and add 192.168.1.2/24.
+  when: router_confirm | bool
+
+- name: Start the clean-slate flash
+  ansible.builtin.uri:
+    url: "{{ installer_base }}/api/clean-slate-flash"
+    method: POST
+    body_format: json
+    body:
+      ip: "{{ router_ip }}"
+      password: "{{ router_password }}"
+      version: "{{ router_version }}"
+      confirmation: "{{ router_flash_info.json.board }}"
+    status_code: 200
+  register: router_flash_job
+  when: router_confirm | bool
+
+- name: Wait for the clean-slate flash job
+  ansible.builtin.uri:
+    url: "{{ installer_base }}/api/status/{{ router_flash_job.json.job_id }}"
+    status_code: 200
+  register: router_flash_status
+  until: router_flash_status.json.status in ['done', 'failed']
+  retries: 90
+  delay: 5
+  when: router_confirm | bool
+
+- name: Fail when the clean-slate job reports a failure
+  ansible.builtin.fail:
+    msg: "clean-slate flash failed: {{ router_flash_status.json.error | default('unknown error') }}"
+  when:
+    - router_confirm | bool
+    - router_flash_status.json.status == 'failed'
+
+- name: Report the flash result
+  ansible.builtin.debug:
+    msg:
+      status: "{{ router_flash_status.json.status }}"
+      router_ip: "{{ router_flash_status.json.ip | default(router_ip) }}"
+      steps: "{{ router_flash_status.json.steps | default([]) }}"
+  when: router_confirm | bool

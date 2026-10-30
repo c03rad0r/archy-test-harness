@@ -43,13 +43,17 @@ ONE_ENGINE_ARTIFACTS ?= $(REPO)/artifacts
 ONE_ENGINE_TARGET ?= x280_test
 ONE_ENGINE_ROUTER ?= gl_mt3000
 ONE_ENGINE_INSTALLER ?= $(ONE_ENGINE_ARTIFACTS)/tollgate-installer-linux-amd64
+ROUTER_IP ?= 192.168.1.1
+ROUTER_VERSION ?= 25.12.5
+ROUTER_PASSWORD_FILE ?= $(HOME)/.config/archy-lab/gl-mt3000.pass
+ROUTER_FINGERPRINT ?=
 
 .PHONY: help lint host-check host-bootstrap build build-release test smoke critical \
         media media-local iso iso-check vm-install vm-run onboarding usb \
         node-check media-soak report handover evidence pr-check remote \
         x280-runbook x280-usb x280-deploy x280-restore \
         one-engine-build one-engine-package one-engine-deploy one-engine-check \
-        tollgate-router-check
+        tollgate-router-check router-flash-info router-flash
 
 help:
 	@printf '%s\n' \
@@ -235,3 +239,24 @@ one-engine-check:
 tollgate-router-check:
 	@$(ANSIBLE) -i "$(INVENTORY)" "$(REPO)/playbooks/router-check.yml" \
 	  -e router="$(ONE_ENGINE_ROUTER)" --ask-pass
+
+router-flash-info:
+	@test -r "$(ROUTER_PASSWORD_FILE)" || { echo "missing $(ROUTER_PASSWORD_FILE)" >&2; exit 1; }
+	@$(ANSIBLE) -i "$(INVENTORY)" "$(REPO)/playbooks/router-flash.yml" \
+	  -e target="$(ONE_ENGINE_TARGET)" \
+	  -e router_ip="$(ROUTER_IP)" \
+	  -e router_version="$(ROUTER_VERSION)" \
+	  -e router_password="$$(cat "$(ROUTER_PASSWORD_FILE)")" \
+	  -e router_fingerprint="$(ROUTER_FINGERPRINT)" \
+	  -e router_confirm=false
+
+router-flash:
+	@test "$(CONFIRM)" = yes || { echo "refusing destructive flash; re-run with CONFIRM=yes" >&2; exit 2; }
+	@test -r "$(ROUTER_PASSWORD_FILE)" || { echo "missing $(ROUTER_PASSWORD_FILE)" >&2; exit 1; }
+	@$(ANSIBLE) -i "$(INVENTORY)" "$(REPO)/playbooks/router-flash.yml" \
+	  -e target="$(ONE_ENGINE_TARGET)" \
+	  -e router_ip="$(ROUTER_IP)" \
+	  -e router_version="$(ROUTER_VERSION)" \
+	  -e router_password="$$(cat "$(ROUTER_PASSWORD_FILE)")" \
+	  -e router_fingerprint="$(ROUTER_FINGERPRINT)" \
+	  -e router_confirm=true
