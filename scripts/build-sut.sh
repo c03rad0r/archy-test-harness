@@ -51,6 +51,10 @@ else
 fi
 
 if [ -e "$WORKTREE/.git" ]; then
+  if [ -n "$(git -C "$WORKTREE" status --porcelain)" ]; then
+    echo "FAIL: $WORKTREE has local changes; commit/stash them or pass --worktree" >&2
+    exit 1
+  fi
   git -C "$WORKTREE" fetch --all --tags --prune
   git -C "$WORKTREE" checkout --detach "$TARGET"
 else
