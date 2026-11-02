@@ -631,6 +631,126 @@ test('vanilla OpenWrt panel inspects the image and stays gated', async ({ page }
   await expect(modal).toHaveCount(0)
 })
 
+test('failed flash offers recheck and trust for the new host key', async ({ page }) => {
+  let trusted = false
+  await page.route('**/rpc/v1', async route => {
+    let body: any = {}
+    try {
+      body = route.request().postDataJSON()
+    } catch {
+      return route.continue()
+    }
+    const reply = (result: unknown) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: body?.id ?? 1,
+          result,
+          error: null,
+        }),
+      })
+
+    if (body?.method === 'openwrt.get-status') {
+      const response = await route.fetch()
+      const json = await response.json()
+      const result = json?.result ?? {}
+      result.tollgate = {
+        ...(result.tollgate ?? {}),
+        installed: true,
+        version: '0.6.0-r1',
+        pinned_version: '0.6.0',
+        up_to_date: true,
+        daemon_running: true,
+        daemon_version: 'TollGate v0.6.0',
+        daemon_version_matches: true,
+        enabled: true,
+        metric: 'bytes',
+        step_size_ms: 22020096,
+        price_per_step: 1,
+        min_steps: 1,
+        configured_mints: 5,
+        accepted_mints: [],
+        nodogsplash_ok: true,
+      }
+      return route.fulfill({
+        status: response.status(),
+        contentType: 'application/json',
+        body: JSON.stringify({ ...json, result }),
+      })
+    }
+    if (body?.method === 'openwrt.installer.clean-slate-info') {
+      return reply({
+        ok: true,
+        host: '192.168.1.1',
+        version: '25.12.5',
+        board: 'glinet_gl-mt3000',
+        image_url: 'https://example.invalid/openwrt.bin',
+        sha256: 'deadbeef',
+        flash_ready: true,
+        links: [
+          {
+            name: 'enx0',
+            carrier: true,
+            wireless: false,
+            ipv4: ['192.168.1.2/24'],
+          },
+        ],
+      })
+    }
+    if (body?.method === 'openwrt.installer.clean-slate-flash') {
+      return reply({ ok: true, job_id: 'test-flash' })
+    }
+    if (body?.method === 'openwrt.installer.clean-slate-status') {
+      return reply({
+        status: 'failed',
+        ip: '192.168.1.1',
+        error: 'router did not come back within 3m0s',
+        steps: [
+          { name: 'identity', status: 'done' },
+          { name: 'image', status: 'done' },
+          { name: 'flash', status: 'failed', detail: 'router did not return' },
+        ],
+      })
+    }
+    if (body?.method === 'openwrt.installer.identify') {
+      if (!trusted) return reply({ ssh_fingerprint: 'SHA256:new-key' })
+      return reply({
+        identified: true,
+        firmware: 'OpenWrt 25.12.5',
+        model: 'glinet,gl-mt3000',
+      })
+    }
+    if (body?.method === 'openwrt.installer.trust') {
+      trusted = true
+      return reply({ trusted: true })
+    }
+    return route.continue()
+  })
+
+  page.on('dialog', dialog => dialog.accept())
+  await connectLabGateway(page)
+  await dismissCompanionOverlay(page)
+  await page.getByTestId('flash-open').click()
+
+  const modal = page.getByTestId('flash-modal')
+  await expect(modal.getByTestId('flash-board')).toHaveText('glinet_gl-mt3000')
+  await modal.getByTestId('flash-confirmation').fill('glinet_gl-mt3000')
+  await modal.getByTestId('flash-ack').check()
+  await modal.getByTestId('flash-start').click()
+
+  await expect(modal.getByTestId('flash-recheck')).toBeVisible({ timeout: 30_000 })
+  await modal.getByTestId('flash-recheck').click()
+  await expect(modal.getByTestId('flash-recovery-fingerprint')).toContainText(
+    'SHA256:new-key',
+  )
+  await modal.getByTestId('flash-recovery-trust').click()
+  await expect(modal.getByTestId('flash-recovery-reconnect')).toContainText(
+    'Reconnect at 192.168.1.1',
+  )
+})
+
 test('host key is shown before trust, or already trusted', async ({ page }) => {
   await connectLabGateway(page)
 
