@@ -609,6 +609,241 @@ test('install progress shows the current step and a percentage', async ({ page }
   )
 })
 
+test('running install is shown next to the button after a reload', async ({ page }) => {
+  const progress = {
+    provision_id: 'resume-test',
+    kind: 'install',
+    phase: 'installer',
+    percent: 33,
+    current: 'Install TollGate package · Installing tollgate-wrt package',
+    done: false,
+    failed: false,
+    steps: [
+      { id: 'verify', label: 'Verify router', status: 'done' },
+      {
+        id: 'install',
+        label: 'Install TollGate package',
+        status: 'running',
+        detail: 'Installing tollgate-wrt package',
+      },
+      { id: 'portal', label: 'Configure captive portal', status: 'pending' },
+    ],
+  }
+
+  await page.route('**/rpc/v1', async route => {
+    let body: any = {}
+    try {
+      body = route.request().postDataJSON()
+    } catch {
+      return route.continue()
+    }
+    const reply = (result: unknown) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: body?.id ?? 1,
+          result,
+          error: null,
+        }),
+      })
+
+    if (body?.method === 'openwrt.provision-progress') {
+      return reply({ ok: true, progress })
+    }
+    if (body?.method === 'openwrt.get-status') {
+      const response = await route.fetch()
+      const json = await response.json()
+      const result = json?.result ?? {}
+      result.tollgate = {
+        ...(result.tollgate ?? {}),
+        installed: false,
+        up_to_date: false,
+        daemon_running: false,
+        enabled: false,
+      }
+      result.wan = { ...(result.wan ?? {}), configured: true, internet: true }
+      return route.fulfill({
+        status: response.status(),
+        contentType: 'application/json',
+        body: JSON.stringify({ ...json, result }),
+      })
+    }
+    return route.continue()
+  })
+
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await expect(page.getByTestId('discovered-gateways')).toBeVisible({ timeout: 60_000 })
+  await dismissCompanionOverlay(page)
+  await connectLabGateway(page)
+
+  const button = page.getByTestId('install-tollgate')
+  await expect(button).toContainText('33%')
+  await expect(button).toContainText('Install TollGate package')
+  await expect(page.getByTestId('provision-progress')).toBeVisible()
+  await expect(page.getByTestId('provision-current')).toContainText(
+    'Install TollGate package',
+  )
+})
+
+test('completed install collapses to a summary and details', async ({ page }) => {
+  const progress = {
+    provision_id: 'done-test',
+    kind: 'install',
+    phase: 'done',
+    percent: 94,
+    current: 'Complete',
+    done: true,
+    failed: false,
+    steps: [
+      { id: 'verify', label: 'Verify router', status: 'done' },
+      {
+        id: 'install',
+        label: 'Install TollGate package',
+        status: 'pending',
+        detail: 'installed; router moved to its management network',
+      },
+      {
+        id: 'brand',
+        label: 'Apply branding',
+        status: 'skipped',
+        detail: 'not reached — the router moved to its management network',
+      },
+      {
+        id: 'archy-network',
+        label: 'Apply SSID and network names',
+        status: 'done',
+      },
+    ],
+  }
+
+  await page.route('**/rpc/v1', async route => {
+    let body: any = {}
+    try {
+      body = route.request().postDataJSON()
+    } catch {
+      return route.continue()
+    }
+    const reply = (result: unknown) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: body?.id ?? 1,
+          result,
+          error: null,
+        }),
+      })
+    if (body?.method === 'openwrt.provision-progress') {
+      return reply({ ok: true, progress })
+    }
+    if (body?.method === 'openwrt.get-status') {
+      const response = await route.fetch()
+      const json = await response.json()
+      const result = json?.result ?? {}
+      result.tollgate = {
+        ...(result.tollgate ?? {}),
+        installed: false,
+        up_to_date: false,
+        daemon_running: false,
+        enabled: false,
+      }
+      result.wan = { ...(result.wan ?? {}), configured: true, internet: true }
+      return route.fulfill({
+        status: response.status(),
+        contentType: 'application/json',
+        body: JSON.stringify({ ...json, result }),
+      })
+    }
+    return route.continue()
+  })
+
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await expect(page.getByTestId('discovered-gateways')).toBeVisible({ timeout: 60_000 })
+  await dismissCompanionOverlay(page)
+  await connectLabGateway(page)
+
+  const panel = page.getByTestId('provision-progress')
+  await expect(panel).toContainText('TollGate install complete')
+  await expect(panel.getByTestId('provision-step-install')).toHaveCount(0)
+  await panel
+    .getByTestId('provision-details')
+    .evaluate((element: HTMLElement) => element.click())
+  await expect(panel.getByTestId('provision-step-install')).toContainText(
+    'Archy completed the post-install steps',
+  )
+  await expect(panel.getByTestId('provision-step-brand')).toContainText(
+    'Handed off to Archy',
+  )
+})
+
+test('daemon startup is shown instead of wallet degraded', async ({ page }) => {
+  await page.route('**/rpc/v1', async route => {
+    let body: any = {}
+    try {
+      body = route.request().postDataJSON()
+    } catch {
+      return route.continue()
+    }
+    const reply = (result: unknown) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: body?.id ?? 1,
+          result,
+          error: null,
+        }),
+      })
+    if (body?.method === 'openwrt.get-status') {
+      const response = await route.fetch()
+      const json = await response.json()
+      const result = json?.result ?? {}
+      result.tollgate = {
+        ...(result.tollgate ?? {}),
+        installed: true,
+        up_to_date: true,
+        daemon_running: true,
+        daemon_version: 'TollGate v0.6.0',
+        daemon_version_matches: true,
+        daemon_uptime: '10s',
+        enabled: true,
+        metric: 'milliseconds',
+        step_size_ms: 60000,
+        price_per_step: 10,
+        min_steps: 1,
+        configured_mints: 5,
+        advertised_mints: [],
+        accepted_mints: [],
+        mint_url: '',
+        nodogsplash_ok: true,
+      }
+      return route.fulfill({
+        status: response.status(),
+        contentType: 'application/json',
+        body: JSON.stringify({ ...json, result }),
+      })
+    }
+    if (body?.method === 'openwrt.wallet-info') {
+      return reply({
+        ok: true,
+        degraded: true,
+        error: 'the daemon is not advertising any configured mint',
+        wallet: { total_balance: 0, mint_count: 0, mint_balances: {} },
+      })
+    }
+    return route.continue()
+  })
+
+  await connectLabGateway(page)
+  await expect(page.getByTestId('daemon-starting')).toBeVisible()
+  await expect(page.getByTestId('wallet-card')).not.toContainText('Wallet degraded')
+  await expect(page.getByTestId('mint-summary')).toContainText('Starting —')
+})
+
 test('vanilla OpenWrt panel inspects the image and stays gated', async ({ page }) => {
   await connectLabGateway(page)
 
@@ -738,14 +973,20 @@ test('failed flash offers recheck and trust for the new host key', async ({ page
   await expect(modal.getByTestId('flash-board')).toHaveText('glinet_gl-mt3000')
   await modal.getByTestId('flash-confirmation').fill('glinet_gl-mt3000')
   await modal.getByTestId('flash-ack').check()
-  await modal.getByTestId('flash-start').click()
+  await dismissCompanionOverlay(page)
+  // The global companion overlay can sit above the flash modal in this lab.
+  // Invoke the buttons directly so the test exercises the recovery flow, not
+  // the unrelated overlay's stacking order.
+  await modal.getByTestId('flash-start').evaluate((element: HTMLElement) => element.click())
 
   await expect(modal.getByTestId('flash-recheck')).toBeVisible({ timeout: 30_000 })
-  await modal.getByTestId('flash-recheck').click()
+  await modal.getByTestId('flash-recheck').evaluate((element: HTMLElement) => element.click())
   await expect(modal.getByTestId('flash-recovery-fingerprint')).toContainText(
     'SHA256:new-key',
   )
-  await modal.getByTestId('flash-recovery-trust').click()
+  await modal
+    .getByTestId('flash-recovery-trust')
+    .evaluate((element: HTMLElement) => element.click())
   await expect(modal.getByTestId('flash-recovery-reconnect')).toContainText(
     'Reconnect at 192.168.1.1',
   )
