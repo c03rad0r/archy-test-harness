@@ -181,46 +181,136 @@ test('WiFi interfaces are grouped by SSID and legacy disabled APs are hidden', a
   await expect(legacy).toHaveCount(1)
 })
 
-test('unverified TollGates are explained, hidden by default, and grouped by SSID', async ({ page }) => {
-  await connectLabGateway(page)
+test('upstreams rank TollGates first and hide the rest behind show more', async ({ page }) => {
+  const networks = [
+    {
+      ssid: 'TollGate-cafe',
+      bssid: 'aa:00:00:00:00:01',
+      signal: -48,
+      encryption: 'none',
+      is_tollgate: true,
+      price_per_step: 1,
+      step_size: 22020096,
+    },
+    {
+      ssid: 'TollGate-market',
+      bssid: 'aa:00:00:00:00:02',
+      signal: -61,
+      encryption: 'psk2',
+      is_tollgate: true,
+    },
+    {
+      ssid: 'strong-regular',
+      bssid: 'aa:00:00:00:00:03',
+      signal: -40,
+      encryption: 'psk2',
+    },
+    {
+      ssid: 'mid-regular',
+      bssid: 'aa:00:00:00:00:04',
+      signal: -55,
+      encryption: 'none',
+    },
+    {
+      ssid: 'weak-regular',
+      bssid: 'aa:00:00:00:00:05',
+      signal: -63,
+      encryption: 'psk2',
+    },
+    {
+      ssid: 'weakest-regular',
+      bssid: 'aa:00:00:00:00:06',
+      signal: -80,
+      encryption: 'none',
+    },
+  ]
 
-  const known = page.getByTestId('known-tollgates')
-  await expect(known).toBeVisible()
-  await expect(known.getByTestId('unverified-explainer')).toContainText(/Verified means/)
-  await expect(page.getByTestId('show-unverified-upstreams')).not.toBeChecked()
-
-  const emptyState = known.getByText(/No verified TollGates nearby/)
-  if (await emptyState.isVisible().catch(() => false)) {
-    await expect(emptyState).toBeVisible()
-  }
-
-  await dismissCompanionOverlay(page)
-  await page.getByTestId('show-unverified-upstreams').check()
-  const groups = known.getByTestId('known-tollgate-group')
-  let groupCount = 0
-  for (let attempt = 0; attempt < 20; attempt++) {
-    groupCount = await groups.count()
-    if (groupCount > 0) break
-    await page.waitForTimeout(250)
-  }
-  if (groupCount === 0) {
-    test.skip(true, 'no known TollGate history on this node')
-  }
-
-  const e750 = groups.filter({ hasText: 'TollGate-E750' })
-  if (await e750.count()) {
-    await expect(e750).toHaveCount(1)
-    const text = await e750.innerText()
-    expect(text).toContain('unverified')
-    expect(text).toContain('02:83:C4:4D:FC:3B')
-    expect(text).toContain('No signed price observed')
-    expect(text).toContain('Connect anyway')
-    // The 5 GHz BSSID can age out of the discovery history; when both radios
-    // are present, the group must label and show the second BSSID.
-    if (text.includes('2 radios')) {
-      expect(text).toContain('94:83:C4:4D:FC:3A')
+  await page.route('**/rpc/v1', async route => {
+    let body: any = {}
+    try {
+      body = route.request().postDataJSON()
+    } catch {
+      return route.continue()
     }
-  }
+    const reply = (result: unknown) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: body?.id ?? 1,
+          result,
+          error: null,
+        }),
+      })
+    if (body?.method === 'openwrt.get-status') {
+      const response = await route.fetch()
+      const json = await response.json()
+      const result = json?.result ?? {}
+      result.tollgate = {
+        ...(result.tollgate ?? {}),
+        installed: true,
+        version: '0.6.0-r1',
+        pinned_version: '0.6.0',
+        up_to_date: true,
+        daemon_running: true,
+        daemon_version: 'TollGate v0.6.0',
+        daemon_version_matches: true,
+        enabled: true,
+        metric: 'bytes',
+        step_size_ms: 22020096,
+        price_per_step: 1,
+        min_steps: 1,
+        configured_mints: 5,
+        accepted_mints: [],
+        nodogsplash_ok: true,
+      }
+      return route.fulfill({
+        status: response.status(),
+        contentType: 'application/json',
+        body: JSON.stringify({ ...json, result }),
+      })
+    }
+    if (body?.method === 'openwrt.upstream-scan') return reply({ networks })
+    if (body?.method === 'openwrt.upstream-known') {
+      return reply({ known: { known_tollgates: [] } })
+    }
+    return route.continue()
+  })
+
+  await connectLabGateway(page)
+  await dismissCompanionOverlay(page)
+  await page.getByTestId('scan-upstreams').click()
+
+  const list = page.getByTestId('upstream-ranked-list')
+  await expect(list).toBeVisible()
+  const rows = list.getByTestId('upstream-row')
+  await expect(rows).toHaveCount(5)
+
+  const ssids = await rows.evaluateAll(elements =>
+    elements.map(element => element.getAttribute('data-ssid')),
+  )
+  expect(ssids.slice(0, 2)).toEqual(['TollGate-cafe', 'TollGate-market'])
+  expect(ssids.slice(2)).toEqual(['strong-regular', 'mid-regular', 'weak-regular'])
+  await expect(rows.nth(0)).toHaveAttribute('data-tollgate', 'true')
+  await expect(rows.nth(2)).toHaveAttribute('data-tollgate', 'false')
+
+  await expect(rows.nth(0).getByTestId('upstream-price')).toContainText(
+    'advertised 1 sat / step',
+  )
+  await expect(rows.nth(1).getByTestId('upstream-price')).toContainText(
+    'no price advertised',
+  )
+  await expect(list.getByTestId('upstream-caveat')).toContainText('self-reported')
+  await expect(list).not.toContainText('verified')
+  await expect(list).not.toContainText('unverified')
+  await expect(rows.nth(0).getByTestId('upstream-connect')).toBeVisible()
+  await expect(rows.nth(2).getByTestId('upstream-use-as-uplink')).toBeVisible()
+
+  await expect(page.getByTestId('upstream-show-more')).toContainText('Show 1 more')
+  await page.getByTestId('upstream-show-more').click()
+  await expect(rows).toHaveCount(6)
+  await expect(rows.nth(5)).toHaveAttribute('data-ssid', 'weakest-regular')
 })
 
 test('internet uplink exposes password-protected Wi-Fi without changing it', async ({ page }) => {
@@ -253,6 +343,13 @@ test('internet uplink exposes password-protected Wi-Fi without changing it', asy
 
   if (await none.isVisible().catch(() => false)) return
 
+  // The ranked list may hide a locked AP behind `Show more`.
+  const showMore = page.getByTestId('uplink-show-more')
+  if (await showMore.count()) {
+    await dismissCompanionOverlay(page)
+    await showMore.click()
+  }
+
   const locked = page.getByTestId('uplink-network').filter({ hasText: '🔒' }).first()
   if (await locked.count()) {
     await dismissCompanionOverlay(page)
@@ -262,6 +359,88 @@ test('internet uplink exposes password-protected Wi-Fi without changing it', asy
     await dismissCompanionOverlay(page)
     await page.getByTestId('uplink-back').click()
   }
+})
+
+test('uplink scan ranks TollGates first and shows three regular APs', async ({ page }) => {
+  const networks = [
+    {
+      ssid: 'TollGate-uplink',
+      bssid: 'bb:00:00:00:00:01',
+      signal: -50,
+      channel: 6,
+      encryption: 'none',
+      is_tollgate: true,
+    },
+    {
+      ssid: 'regular-a',
+      bssid: 'bb:00:00:00:00:02',
+      signal: -45,
+      channel: 1,
+      encryption: 'psk2',
+    },
+    {
+      ssid: 'regular-b',
+      bssid: 'bb:00:00:00:00:03',
+      signal: -60,
+      channel: 11,
+      encryption: 'psk2',
+    },
+    {
+      ssid: 'regular-c',
+      bssid: 'bb:00:00:00:00:04',
+      signal: -65,
+      channel: 3,
+      encryption: 'none',
+    },
+    {
+      ssid: 'regular-d',
+      bssid: 'bb:00:00:00:00:05',
+      signal: -75,
+      channel: 9,
+      encryption: 'psk2',
+    },
+  ]
+
+  await page.route('**/rpc/v1', async route => {
+    let body: any = {}
+    try {
+      body = route.request().postDataJSON()
+    } catch {
+      return route.continue()
+    }
+    if (body?.method === 'openwrt.scan-wifi') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: body?.id ?? 1,
+          result: { networks },
+          error: null,
+        }),
+      })
+    }
+    return route.continue()
+  })
+
+  await connectLabGateway(page)
+  await dismissCompanionOverlay(page)
+  await page.getByTestId('configure-uplink').click()
+  await dismissCompanionOverlay(page)
+  await page.getByTestId('scan-uplink').click()
+
+  const rows = page.getByTestId('uplink-network')
+  await expect(rows).toHaveCount(4)
+  const ssids = await rows.evaluateAll(elements =>
+    elements.map(element => element.getAttribute('data-ssid')),
+  )
+  expect(ssids).toEqual(['TollGate-uplink', 'regular-a', 'regular-b', 'regular-c'])
+  await expect(rows.nth(0)).toHaveAttribute('data-tollgate', 'true')
+
+  await expect(page.getByTestId('uplink-show-more')).toContainText('Show 1 more')
+  await page.getByTestId('uplink-show-more').click()
+  await expect(rows).toHaveCount(5)
+  await expect(rows.nth(4)).toHaveAttribute('data-ssid', 'regular-d')
 })
 
 test('wallet status is explicit and a zero balance cannot be drained', async ({ page }) => {
