@@ -1,7 +1,7 @@
 import { expect, test, type BrowserContext, type Page } from '@playwright/test'
 
 const TOKEN = process.env.ARCHY_TEST_TOKEN
-const GATEWAY_IP = process.env.ARCHY_TEST_GATEWAY_IP ?? '10.212.49.1'
+const GATEWAY_IP = process.env.ARCHY_TEST_GATEWAY_IP ?? '192.168.2.1'
 const GATEWAY_PASSWORD = process.env.ARCHY_TEST_GATEWAY_PASSWORD ?? ''
 
 test.describe.configure({ mode: 'serial' })
@@ -172,7 +172,9 @@ test('WiFi interfaces are grouped by SSID and legacy disabled APs are hidden', a
   await expect(publicGroup).toHaveCount(1)
   await expect(publicGroup).toContainText('Paid')
 
-  const legacy = wifi.locator('[data-ssid^="!TollGate-"]')
+  // The upstream default AP's name varies by package version (`!TollGate-*`,
+  // `Archipelago-*`); assert the disabled state, not the spelling.
+  const legacy = wifi.locator('[data-disabled="true"]')
   await expect(legacy).toHaveCount(0)
   await dismissCompanionOverlay(page)
   await page.getByTestId('show-legacy-wifi').check()
@@ -273,6 +275,159 @@ test('wallet status is explicit and a zero balance cannot be drained', async ({ 
   await expect(drain).toBeVisible()
   await expect(drain).toContainText('Drain to Archy wallet')
   await expect(drain).toBeDisabled()
+})
+
+async function forceGetStatus(
+  page: Page,
+  mutate: (result: Record<string, any>) => void,
+) {
+  await page.route('**/rpc/v1', async route => {
+    let body: any = {}
+    try {
+      body = route.request().postDataJSON()
+    } catch {
+      return route.continue()
+    }
+    if (body?.method !== 'openwrt.get-status') return route.continue()
+    const response = await route.fetch()
+    const json = await response.json()
+    const result = json?.result ?? {}
+    mutate(result)
+    await route.fulfill({
+      status: response.status(),
+      contentType: 'application/json',
+      body: JSON.stringify({ ...json, result }),
+    })
+  })
+}
+
+test('installed TollGate offers reapply without reinstalling', async ({ page }) => {
+  await connectLabGateway(page)
+
+  const reapply = page.getByTestId('reapply-config')
+  if (!(await reapply.count())) {
+    test.skip(true, 'router is not in the installed/admin state')
+  }
+  await expect(reapply).toBeVisible()
+  await expect(reapply).toContainText('Reapply config')
+  // Deliberately never click: reapply writes the router configuration.
+})
+
+test('install is blocked when the router has no internet uplink', async ({ page }) => {
+  await forceGetStatus(page, result => {
+    result.wan = { ...(result.wan ?? {}), configured: false, internet: false }
+    result.tollgate = {
+      ...(result.tollgate ?? {}),
+      installed: false,
+      up_to_date: false,
+      daemon_running: false,
+      enabled: false,
+    }
+  })
+
+  await connectLabGateway(page)
+
+  await expect(page.getByTestId('install-blocked-no-wan')).toBeVisible()
+  await expect(page.getByTestId('install-tollgate')).toBeDisabled()
+})
+
+test('install progress shows the current step and a percentage', async ({ page }) => {
+  const progress = {
+    provision_id: 'test-progress',
+    kind: 'install',
+    phase: 'installer',
+    percent: 58,
+    current: 'Installing TollGate package',
+    done: false,
+    failed: false,
+    steps: [
+      { id: 'verify', label: 'Verify router', status: 'done' },
+      { id: 'stage', label: 'Prepare installer', status: 'done' },
+      {
+        id: 'install',
+        label: 'Install TollGate package',
+        status: 'running',
+        detail: 'apk add tollgate-wrt',
+      },
+      { id: 'portal', label: 'Configure captive portal', status: 'pending' },
+    ],
+  }
+
+  await page.route('**/rpc/v1', async route => {
+    let body: any = {}
+    try {
+      body = route.request().postDataJSON()
+    } catch {
+      return route.continue()
+    }
+    const method = body?.method
+    const reply = (result: unknown) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: body?.id ?? 1,
+          result,
+          error: null,
+        }),
+      })
+
+    if (method === 'openwrt.installer.identify') {
+      // This test exercises the progress panel, not the trust handshake. The
+      // router moved to a new address, so its installer known-hosts entry is
+      // intentionally absent; skip the modal here.
+      return reply({ ok: true, ssh_fingerprint: '' })
+    }
+    if (method === 'openwrt.provision-progress') {
+      return reply({ ok: true, progress })
+    }
+    if (method === 'openwrt.provision-tollgate') {
+      // Hold the request open long enough for the panel to render. This is a
+      // mocked call; the router is never touched.
+      await new Promise(resolve => setTimeout(resolve, 15_000))
+      return reply({ ok: false, error: 'simulated test timeout' })
+    }
+    if (method === 'openwrt.get-status') {
+      const response = await route.fetch()
+      const json = await response.json()
+      const result = json?.result ?? {}
+      result.wan = { ...(result.wan ?? {}), configured: true, internet: true }
+      result.tollgate = {
+        ...(result.tollgate ?? {}),
+        installed: false,
+        up_to_date: false,
+        daemon_running: false,
+        enabled: false,
+        payout_address: result.tollgate?.payout_address || 'test@example.com',
+      }
+      return route.fulfill({
+        status: response.status(),
+        contentType: 'application/json',
+        body: JSON.stringify({ ...json, result }),
+      })
+    }
+    return route.continue()
+  })
+
+  await connectLabGateway(page)
+
+  const payout = page.locator('input[placeholder="you@wallet.example"]')
+  if (await payout.count()) {
+    const value = await payout.inputValue()
+    if (!value) await payout.fill('test@example.com')
+  }
+  await dismissCompanionOverlay(page)
+  await page.getByTestId('install-tollgate').click()
+
+  await expect(page.getByTestId('provision-progress')).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByTestId('provision-percent')).toHaveText('58%')
+  await expect(page.getByTestId('provision-current')).toContainText(
+    'Installing TollGate package',
+  )
+  await expect(page.getByTestId('provision-step-install')).toContainText(
+    'Install TollGate package',
+  )
 })
 
 test('vanilla OpenWrt panel inspects the image and stays gated', async ({ page }) => {
