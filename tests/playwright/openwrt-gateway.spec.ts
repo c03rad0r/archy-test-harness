@@ -889,6 +889,7 @@ test('vanilla OpenWrt panel inspects the image and stays gated', async ({ page }
 
 test('failed flash offers recheck and trust for the new host key', async ({ page }) => {
   let trusted = false
+  let capturedNewPassword = ''
   await page.route('**/rpc/v1', async route => {
     let body: any = {}
     try {
@@ -956,6 +957,8 @@ test('failed flash offers recheck and trust for the new host key', async ({ page
       })
     }
     if (body?.method === 'openwrt.installer.clean-slate-flash') {
+      capturedNewPassword =
+        body?.params?.new_password ?? body?.params?.newPassword ?? ''
       return reply({ ok: true, job_id: 'test-flash' })
     }
     if (body?.method === 'openwrt.installer.clean-slate-status') {
@@ -993,6 +996,7 @@ test('failed flash offers recheck and trust for the new host key', async ({ page
   const modal = page.getByTestId('flash-modal')
   await expect(modal.getByTestId('flash-board')).toHaveText('glinet_gl-mt3000')
   await modal.getByTestId('flash-confirmation').fill('glinet_gl-mt3000')
+  await modal.getByTestId('flash-new-password').fill('newpass123')
   await modal.getByTestId('flash-ack').check()
   await dismissCompanionOverlay(page)
   // The global companion overlay can sit above the flash modal in this lab.
@@ -1011,6 +1015,7 @@ test('failed flash offers recheck and trust for the new host key', async ({ page
   await expect(modal.getByTestId('flash-recovery-reconnect')).toContainText(
     'Reconnect at 192.168.1.1',
   )
+  expect(capturedNewPassword).toBe('newpass123')
 })
 
 test('host key is shown before trust, or already trusted', async ({ page }) => {
