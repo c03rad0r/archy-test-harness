@@ -443,6 +443,79 @@ test('uplink scan ranks TollGates first and shows three regular APs', async ({ p
   await expect(rows.nth(4)).toHaveAttribute('data-ssid', 'regular-d')
 })
 
+test('uplink sends the scanned band and surfaces association failures', async ({ page }) => {
+  let captured: any = null
+  const networks = [
+    {
+      ssid: 'hermes-lan',
+      bssid: 'bb:00:00:00:00:10',
+      signal: -45,
+      channel: 36,
+      band: '5',
+      encryption: 'wpa-psk',
+    },
+  ]
+
+  await page.route('**/rpc/v1', async route => {
+    let body: any = {}
+    try {
+      body = route.request().postDataJSON()
+    } catch {
+      return route.continue()
+    }
+    const reply = (result: unknown) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: body?.id ?? 1,
+          result,
+          error: null,
+        }),
+      })
+
+    if (body?.method === 'openwrt.scan-wifi') {
+      return reply({ networks })
+    }
+    if (body?.method === 'openwrt.configure-wan') {
+      captured = body.params
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: body?.id ?? 1,
+          result: null,
+          error: {
+            code: -32000,
+            message:
+              'the router could not associate to "hermes-lan" on any radio (radio1, radio0). A radio can host an AP and a STA only on the same channel.',
+          },
+        }),
+      })
+    }
+    return route.continue()
+  })
+
+  await connectLabGateway(page)
+  await dismissCompanionOverlay(page)
+  await page.getByTestId('configure-uplink').click()
+  await dismissCompanionOverlay(page)
+  await page.getByTestId('scan-uplink').click()
+
+  await page.getByTestId('uplink-network').first().click()
+  await page.getByTestId('uplink-password').fill('secret')
+  await page.getByTestId('uplink-next').click()
+  await page.getByTestId('uplink-apply').click()
+
+  await expect(page.getByText('could not associate')).toBeVisible({
+    timeout: 20_000,
+  })
+  expect(captured?.band).toBe('5')
+  expect(captured?.encryption).toBe('wpa-psk')
+})
+
 test('wallet status is explicit and a zero balance cannot be drained', async ({ page }) => {
   await connectLabGateway(page)
 
