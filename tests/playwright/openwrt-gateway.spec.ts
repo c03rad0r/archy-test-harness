@@ -1045,6 +1045,10 @@ test('vanilla OpenWrt panel inspects the image and stays gated', async ({ page }
   await expect(modal.getByTestId('flash-board')).toHaveText(/glinet_gl-mt3000/, {
     timeout: 90_000,
   })
+  // Auto-prepare can still be in flight when the board name arrives.
+  await expect(modal.getByTestId('flash-preparing')).toHaveCount(0, {
+    timeout: 30_000,
+  })
   await expect(modal.getByTestId('flash-start')).toBeDisabled()
   await expect(modal.getByTestId('flash-block-reason')).toBeVisible()
 
@@ -1073,6 +1077,218 @@ test('vanilla OpenWrt panel inspects the image and stays gated', async ({ page }
   // Deliberately never click flash-start in the regression lane.
   await modal.getByText('Close', { exact: true }).click()
   await expect(modal).toHaveCount(0)
+})
+
+test('flash modal prepares and removes the post-flash link automatically', async ({ page }) => {
+  let prepared = false
+  const prepareCalls: string[] = []
+  const removeCalls: string[] = []
+
+  await page.route('**/rpc/v1', async route => {
+    let body: any = {}
+    try {
+      body = route.request().postDataJSON()
+    } catch {
+      return route.continue()
+    }
+    const reply = (result: unknown) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: body?.id ?? 1,
+          result,
+          error: null,
+        }),
+      })
+
+    if (body?.method === 'openwrt.get-status') {
+      const response = await route.fetch()
+      const json = await response.json()
+      const result = json?.result ?? {}
+      result.tollgate = {
+        ...(result.tollgate ?? {}),
+        installed: true,
+        up_to_date: true,
+        daemon_running: true,
+        daemon_version: 'TollGate v0.6.0',
+        daemon_version_matches: true,
+        enabled: true,
+      }
+      return route.fulfill({
+        status: response.status(),
+        contentType: 'application/json',
+        body: JSON.stringify({ ...json, result }),
+      })
+    }
+    if (body?.method === 'openwrt.installer.clean-slate-info') {
+      return reply({
+        ok: true,
+        host: '192.168.2.1',
+        version: '25.12.5',
+        board: 'glinet_gl-mt3000',
+        image_url: 'https://example.invalid/openwrt.bin',
+        sha256: 'deadbeef',
+        flash_ready: prepared,
+        post_flash_route: prepared ? 'enx0' : undefined,
+        links: [
+          {
+            name: 'enx0',
+            carrier: true,
+            wireless: false,
+            physical: true,
+            preferred: true,
+            ipv4: prepared
+              ? ['192.168.2.153/24', '192.168.1.2/24']
+              : ['192.168.2.153/24'],
+          },
+          {
+            name: 'wg0',
+            carrier: true,
+            wireless: false,
+            physical: false,
+            preferred: false,
+            ipv4: ['10.44.0.1/16'],
+          },
+        ],
+      })
+    }
+    if (body?.method === 'openwrt.installer.prepare-flash-link') {
+      prepareCalls.push(String(body?.params?.interface ?? ''))
+      prepared = true
+      return reply({
+        ok: true,
+        interface: body?.params?.interface,
+        address: '192.168.1.2/24',
+        post_flash_route: 'enx0',
+        route_ok: true,
+      })
+    }
+    if (body?.method === 'openwrt.installer.remove-flash-link') {
+      removeCalls.push(String(body?.params?.interface ?? ''))
+      prepared = false
+      return reply({
+        ok: true,
+        interface: body?.params?.interface,
+        address: '192.168.1.2/24',
+        removed: true,
+        post_flash_route: '192.168.50.1',
+      })
+    }
+    return route.continue()
+  })
+
+  await connectLabGateway(page)
+  await dismissCompanionOverlay(page)
+  // The companion overlay can sit above the advanced panel in this lab.
+  await page
+    .getByTestId('flash-open')
+    .evaluate((element: HTMLElement) => element.click())
+
+  const modal = page.getByTestId('flash-modal')
+  await expect(modal.getByTestId('flash-board')).toHaveText('glinet_gl-mt3000')
+  await expect.poll(() => prepareCalls).toEqual(['enx0'])
+  await expect(modal.getByTestId('flash-prepared')).toContainText('enx0')
+  await expect(modal.getByTestId('flash-route')).toContainText('enx0')
+
+  await modal.getByTestId('flash-confirmation').fill('glinet_gl-mt3000')
+  await modal.getByTestId('flash-ack').check()
+  await expect(modal.getByTestId('flash-start')).toBeEnabled()
+
+  await modal
+    .getByTestId('flash-remove-link')
+    .evaluate((element: HTMLElement) => element.click())
+  await expect.poll(() => removeCalls).toEqual(['enx0'])
+  await expect(modal.getByTestId('flash-start')).toBeDisabled()
+})
+
+test('a conflicting post-flash route keeps the flash button disabled', async ({ page }) => {
+  await page.route('**/rpc/v1', async route => {
+    let body: any = {}
+    try {
+      body = route.request().postDataJSON()
+    } catch {
+      return route.continue()
+    }
+    const reply = (result: unknown) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: body?.id ?? 1,
+          result,
+          error: null,
+        }),
+      })
+
+    if (body?.method === 'openwrt.get-status') {
+      const response = await route.fetch()
+      const json = await response.json()
+      const result = json?.result ?? {}
+      result.tollgate = {
+        ...(result.tollgate ?? {}),
+        installed: true,
+        up_to_date: true,
+        daemon_running: true,
+        daemon_version: 'TollGate v0.6.0',
+        daemon_version_matches: true,
+        enabled: true,
+      }
+      return route.fulfill({
+        status: response.status(),
+        contentType: 'application/json',
+        body: JSON.stringify({ ...json, result }),
+      })
+    }
+    if (body?.method === 'openwrt.installer.clean-slate-info') {
+      return reply({
+        ok: true,
+        host: '192.168.2.1',
+        version: '25.12.5',
+        board: 'glinet_gl-mt3000',
+        image_url: 'https://example.invalid/openwrt.bin',
+        sha256: 'deadbeef',
+        flash_ready: false,
+        post_flash_route: 'enx1',
+        links: [
+          {
+            name: 'enx0',
+            carrier: true,
+            wireless: false,
+            physical: true,
+            preferred: true,
+            ipv4: ['192.168.1.2/24'],
+          },
+          {
+            name: 'enx1',
+            carrier: true,
+            wireless: false,
+            physical: true,
+            preferred: false,
+            ipv4: ['192.168.50.166/24'],
+          },
+        ],
+      })
+    }
+    return route.continue()
+  })
+
+  await connectLabGateway(page)
+  await dismissCompanionOverlay(page)
+  await page
+    .getByTestId('flash-open')
+    .evaluate((element: HTMLElement) => element.click())
+
+  const modal = page.getByTestId('flash-modal')
+  await expect(modal.getByTestId('flash-board')).toHaveText('glinet_gl-mt3000')
+  await expect(modal.getByTestId('flash-block-reason')).toContainText(
+    'goes via enx1',
+  )
+  await modal.getByTestId('flash-confirmation').fill('glinet_gl-mt3000')
+  await modal.getByTestId('flash-ack').check()
+  await expect(modal.getByTestId('flash-start')).toBeDisabled()
 })
 
 test('failed flash offers recheck and trust for the new host key', async ({ page }) => {
