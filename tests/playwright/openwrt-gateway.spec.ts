@@ -7,6 +7,13 @@ const GATEWAY_PASSWORD = process.env.ARCHY_TEST_GATEWAY_PASSWORD ?? ''
 test.describe.configure({ mode: 'serial' })
 test.setTimeout(180_000)
 
+// Several tests stub get-status while the page keeps polling. Without this,
+// a poll that is still in flight when the test ends reports
+// "route.fetch: Test ended" and fails an otherwise green test.
+test.afterEach(async ({ page }) => {
+  await page.unrouteAll({ behavior: 'ignoreErrors' }).catch(() => {})
+})
+
 async function loginWithDeviceToken(context: BrowserContext, baseURL: string | undefined) {
   if (!TOKEN) {
     throw new Error(
