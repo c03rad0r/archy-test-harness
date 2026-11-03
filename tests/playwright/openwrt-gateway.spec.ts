@@ -858,9 +858,30 @@ test('vanilla OpenWrt panel inspects the image and stays gated', async ({ page }
     timeout: 90_000,
   })
   await expect(modal.getByTestId('flash-start')).toBeDisabled()
+  await expect(modal.getByTestId('flash-block-reason')).toBeVisible()
+
+  const preferred = modal
+    .locator('[data-testid="flash-link"]')
+    .filter({ hasText: 'router link' })
+  if (await preferred.count()) {
+    const text = await preferred.first().innerText()
+    if (!text.includes('192.168.1.')) {
+      await expect(preferred.first().getByTestId('flash-prepare-link')).toBeVisible()
+    }
+  }
+
+  const virtual = modal
+    .locator('[data-testid="flash-link"]')
+    .filter({ hasText: 'virtual' })
+  for (let index = 0; index < (await virtual.count()); index++) {
+    await expect(virtual.nth(index).getByTestId('flash-prepare-link')).toHaveCount(0)
+  }
 
   await modal.getByTestId('flash-confirmation').fill('glinet_gl-mt3000')
   await modal.getByTestId('flash-ack').check()
+  if (await modal.getByTestId('flash-start').isDisabled()) {
+    await expect(modal.getByTestId('flash-block-reason')).toContainText('192.168.1')
+  }
   // Deliberately never click flash-start in the regression lane.
   await modal.getByText('Close', { exact: true }).click()
   await expect(modal).toHaveCount(0)
