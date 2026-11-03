@@ -845,6 +845,17 @@ test('daemon startup is shown instead of wallet degraded', async ({ page }) => {
 })
 
 test('vanilla OpenWrt panel inspects the image and stays gated', async ({ page }) => {
+  await forceGetStatus(page, result => {
+    result.tollgate = {
+      ...(result.tollgate ?? {}),
+      installed: true,
+      up_to_date: true,
+      daemon_running: true,
+      daemon_version: 'TollGate v0.6.0',
+      daemon_version_matches: true,
+      enabled: true,
+    }
+  })
   await connectLabGateway(page)
 
   const advanced = page.getByTestId('advanced-flash')
