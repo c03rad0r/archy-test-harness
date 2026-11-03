@@ -809,7 +809,7 @@ test('daemon startup is shown instead of wallet degraded', async ({ page }) => {
         daemon_running: true,
         daemon_version: 'TollGate v0.6.0',
         daemon_version_matches: true,
-        daemon_uptime: '10s',
+        daemon_uptime: '85s',
         enabled: true,
         metric: 'milliseconds',
         step_size_ms: 60000,
@@ -842,6 +842,103 @@ test('daemon startup is shown instead of wallet degraded', async ({ page }) => {
   await expect(page.getByTestId('daemon-starting')).toBeVisible()
   await expect(page.getByTestId('wallet-card')).not.toContainText('Wallet degraded')
   await expect(page.getByTestId('mint-summary')).toContainText('Starting —')
+  await expect(page.getByTestId('tollgate-updated')).toBeVisible()
+})
+
+test('a reload resumes readiness until the mints advertise', async ({ page }) => {
+  const mints = [
+    'https://mint.coinos.io',
+    'https://mint.macadamia.cash',
+    'https://mint.westernbtc.com',
+    'https://kashu.me',
+    'https://mint.cubabitcoin.org',
+  ]
+  let statusCalls = 0
+
+  await page.route('**/rpc/v1', async route => {
+    let body: any = {}
+    try {
+      body = route.request().postDataJSON()
+    } catch {
+      return route.continue()
+    }
+    const reply = (result: unknown) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: body?.id ?? 1,
+          result,
+          error: null,
+        }),
+      })
+
+    if (body?.method === 'openwrt.get-status') {
+      statusCalls += 1
+      const response = await route.fetch()
+      const json = await response.json()
+      const result = json?.result ?? {}
+      // First snapshot is stale (0 of 5); the resumed poll must fetch again
+      // and pick up the advertised mints without a manual Refresh.
+      const advertised = statusCalls >= 3 ? mints : []
+      result.tollgate = {
+        ...(result.tollgate ?? {}),
+        installed: true,
+        up_to_date: true,
+        daemon_running: true,
+        daemon_version: 'TollGate v0.6.0',
+        daemon_version_matches: true,
+        daemon_uptime: '85s',
+        enabled: true,
+        metric: 'milliseconds',
+        step_size_ms: 60000,
+        price_per_step: 10,
+        min_steps: 1,
+        configured_mints: 5,
+        advertised_mints: advertised.map(url => ({
+          url,
+          price: 10,
+          unit: 'sat',
+          min_steps: 1,
+        })),
+        accepted_mints: mints.map(url => ({
+          url,
+          price_per_step: 10,
+          price_unit: 'sat',
+          purchase_min_steps: 1,
+          min_balance: 64,
+          min_payout_amount: 128,
+          payout_interval_seconds: 60,
+          balance_tolerance_percent: 10,
+        })),
+        mint_url: '',
+        nodogsplash_ok: true,
+      }
+      return route.fulfill({
+        status: response.status(),
+        contentType: 'application/json',
+        body: JSON.stringify({ ...json, result }),
+      })
+    }
+    if (body?.method === 'openwrt.wallet-info') {
+      return reply({
+        ok: true,
+        degraded: false,
+        wallet: { total_balance: 0, mint_count: 0, mint_balances: {} },
+      })
+    }
+    return route.continue()
+  })
+
+  await connectLabGateway(page)
+  await expect(page.getByTestId('daemon-starting')).toBeVisible()
+  await expect(page.getByTestId('mint-summary')).toContainText('Starting —')
+  await expect(page.getByTestId('mint-summary')).toContainText('5 of 5', {
+    timeout: 20_000,
+  })
+  await expect(page.getByTestId('daemon-starting')).toHaveCount(0)
+  await expect(page.getByTestId('gateway-updated')).toContainText('Updated')
 })
 
 test('vanilla OpenWrt panel inspects the image and stays gated', async ({ page }) => {
