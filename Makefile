@@ -52,12 +52,19 @@ PLAYWRIGHT_NODE ?= archipelago@192.168.50.199
 PLAYWRIGHT_TOKEN ?=
 PLAYWRIGHT_EXPECT_METRIC ?= bytes
 PORTAL_IP ?= 192.168.99.1
+MINT_TARGET ?= x280_test
+# Prefer the stable wired address; the Wi-Fi .199 address is ephemeral.
+MINT_HOST ?= 192.168.50.166
+MINT_PORT ?= 3338
+MINT_FIPS ?= fd5d:a773:44d1:2c34:1424:caaa:271c:795
+MINT_SSH ?= archipelago@$(MINT_HOST)
 
 .PHONY: help lint host-check host-bootstrap build build-release test smoke critical \
         media media-local iso iso-check vm-install vm-run onboarding usb \
         node-check media-soak report handover evidence pr-check remote \
         x280-runbook x280-usb x280-deploy x280-restore \
         one-engine-build one-engine-package one-engine-deploy one-engine-check \
+        mint-deploy mint-check \
         tollgate-router-check router-flash-info router-flash \
         playwright-install playwright-test paid-client-check regress
 
@@ -87,6 +94,8 @@ help:
 	  '  make playwright-install          # install the Playwright runner' \
 	  '  make playwright-test PLAYWRIGHT_URL=http://192.168.50.199' \
 	  '  make paid-client-check PORTAL_IP=192.168.99.1  # run from paid SSID' \
+	  '  make mint-deploy                 # deploy the Cashu test mint + FIPS front' \
+	  '  make mint-check                  # check /v1/keys over IPv4 and FIPS' \
 	  '  make regress                     # lint + node smoke + Playwright' \
 	  '  make lint                        # shellcheck/yamllint/ansible/python' \
 	  '' \
@@ -247,6 +256,18 @@ one-engine-deploy:
 one-engine-check:
 	@$(ANSIBLE) -i "$(INVENTORY)" "$(REPO)/playbooks/node.yml" \
 	  -e target="$(ONE_ENGINE_TARGET)" --tags smoke
+
+# ---- Cashu test mint (IPv4 + IPv6/FIPS front) --------------------------------
+mint-deploy:
+	@$(ANSIBLE) -i "$(INVENTORY)" "$(REPO)/playbooks/mint.yml" \
+	  -e target="$(MINT_TARGET)" \
+	  -e cashu_mint_advertise_host="$(MINT_HOST)" \
+	  -e cashu_mint_replace_legacy=true
+
+mint-check:
+	@MINT_HOST="$(MINT_HOST)" MINT_PORT="$(MINT_PORT)" \
+	  MINT_FIPS="$(MINT_FIPS)" MINT_SSH="$(MINT_SSH)" \
+	  "$(REPO)/scripts/mint-check.sh"
 
 tollgate-router-check:
 	@$(ANSIBLE) -i "$(INVENTORY)" "$(REPO)/playbooks/router-check.yml" \

@@ -1,0 +1,222 @@
+---
+- name: Validate the mint backend
+  ansible.builtin.assert:
+    that:
+      - cashu_mint_backend in ['nutshell', 'cdk-mintd']
+      - cashu_mint_port | int > 1024
+      - cashu_mint_user | length > 0
+    fail_msg: "cashu_mint_backend must be nutshell or cdk-mintd"
+
+- name: Resolve the mint user
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ cashu_mint_user }}"
+
+- name: Record the mint user id
+  ansible.builtin.set_fact:
+    cashu_mint_uid: "{{ getent_passwd[cashu_mint_user][1] }}"
+
+- name: Keep the mint user's runtime directory available after logout
+  ansible.builtin.command:
+    argv:
+      - loginctl
+      - enable-linger
+      - "{{ cashu_mint_user }}"
+  changed_when: false
+  failed_when: false
+
+- name: Check that podman is installed
+  ansible.builtin.stat:
+    path: "{{ cashu_mint_podman_bin }}"
+  register: cashu_mint_podman
+  when: cashu_mint_backend == 'nutshell'
+
+- name: Require podman for the Nutshell backend
+  ansible.builtin.assert:
+    that:
+      - cashu_mint_podman.stat.exists
+    fail_msg: "{{ cashu_mint_podman_bin }} is missing; run the host_tools role first"
+  when: cashu_mint_backend == 'nutshell'
+
+- name: Create the mint data directory
+  ansible.builtin.file:
+    path: "{{ cashu_mint_data_dir }}"
+    state: directory
+    owner: "{{ cashu_mint_user }}"
+    group: "{{ cashu_mint_user }}"
+    mode: "0750"
+
+- name: Check for an existing cdk-mintd environment file
+  ansible.builtin.stat:
+    path: "{{ cashu_mint_data_dir }}/mint.env"
+  register: cashu_mint_env_file
+  when: cashu_mint_backend == 'cdk-mintd'
+
+- name: Write the Nutshell environment file
+  ansible.builtin.copy:
+    dest: "{{ cashu_mint_data_dir }}/mint.env"
+    owner: "{{ cashu_mint_user }}"
+    group: "{{ cashu_mint_user }}"
+    mode: "0600"
+    content: |
+      MINT_BACKEND_BOLT11_SAT=FakeWallet
+      MINT_LISTEN_HOST=0.0.0.0
+      MINT_LISTEN_PORT={{ cashu_mint_port }}
+      MINT_PRIVATE_KEY={{ cashu_mint_private_key }}
+  no_log: true
+  when: cashu_mint_backend == 'nutshell'
+
+- name: Write the cdk-mintd environment file
+  ansible.builtin.copy:
+    dest: "{{ cashu_mint_data_dir }}/mint.env"
+    owner: "{{ cashu_mint_user }}"
+    group: "{{ cashu_mint_user }}"
+    mode: "0600"
+    content: |
+      CDK_MINTD_MNEMONIC={{ cashu_mint_mnemonic }}
+  no_log: true
+  when:
+    - cashu_mint_backend == 'cdk-mintd'
+    - cashu_mint_mnemonic | length > 0
+
+- name: Require a cdk-mintd mnemonic when no environment file exists
+  ansible.builtin.assert:
+    that:
+      - cashu_mint_env_file.stat.exists or cashu_mint_mnemonic | length > 0
+    fail_msg: "cdk-mintd needs cashu_mint_mnemonic or an existing mint.env"
+  when: cashu_mint_backend == 'cdk-mintd'
+
+- name: Remove the legacy Nutshell container
+  ansible.builtin.command:
+    argv:
+      - "{{ cashu_mint_podman_bin }}"
+      - rm
+      - -f
+      - "{{ cashu_mint_legacy_container }}"
+  become_user: "{{ cashu_mint_user }}"
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ cashu_mint_uid }}"
+  register: cashu_mint_legacy_rm
+  changed_when: cashu_mint_legacy_rm.rc == 0
+  failed_when: cashu_mint_legacy_rm.rc not in [0, 1, 125]
+  when:
+    - cashu_mint_replace_legacy | bool
+    - cashu_mint_backend == 'nutshell'
+
+- name: Write the Nutshell systemd unit
+  ansible.builtin.template:
+    src: cashu-mint.service.j2
+    dest: "/etc/systemd/system/{{ cashu_mint_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart cashu mint
+  when: cashu_mint_backend == 'nutshell'
+
+- name: Write the cdk-mintd systemd unit
+  ansible.builtin.template:
+    src: cashu-mint-cdk.service.j2
+    dest: "/etc/systemd/system/{{ cashu_mint_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart cashu mint
+  when: cashu_mint_backend == 'cdk-mintd'
+
+- name: Install socat for the IPv6 front
+  ansible.builtin.package:
+    name: socat
+    state: present
+  when: cashu_mint_fips_proxy | bool
+
+- name: Write the IPv6/FIPS front unit
+  ansible.builtin.template:
+    src: cashu-mint-v6.service.j2
+    dest: "/etc/systemd/system/{{ cashu_mint_v6_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart cashu mint v6
+  when: cashu_mint_fips_proxy | bool
+
+- name: Enable and start the mint
+  ansible.builtin.systemd:
+    name: "{{ cashu_mint_service_name }}"
+    enabled: true
+    state: "{{ 'restarted' if cashu_mint_replace_legacy | bool else 'started' }}"
+    daemon_reload: true
+
+- name: Enable and start the IPv6/FIPS front
+  ansible.builtin.systemd:
+    name: "{{ cashu_mint_v6_service_name }}"
+    enabled: true
+    state: "{{ 'restarted' if cashu_mint_replace_legacy | bool else 'started' }}"
+    daemon_reload: true
+  when: cashu_mint_fips_proxy | bool
+
+- name: Detect the global IPv6 address on the FIPS interface
+  ansible.builtin.shell: |
+    set -eu
+    ip -6 -o addr show dev {{ cashu_mint_fips_interface }} scope global \
+      | awk '{print $4}' | cut -d/ -f1 | head -1
+  register: cashu_mint_fips_detect
+  changed_when: false
+  failed_when: false
+  when:
+    - cashu_mint_fips_proxy | bool
+    - cashu_mint_fips_address | length == 0
+
+- name: Record the FIPS address
+  ansible.builtin.set_fact:
+    cashu_mint_fips_address: "{{ cashu_mint_fips_detect.stdout | default('') | trim }}"
+  when:
+    - cashu_mint_fips_proxy | bool
+    - cashu_mint_fips_address | length == 0
+
+- name: Record the advertised URLs
+  ansible.builtin.set_fact:
+    cashu_mint_ipv4_url: >-
+      http://{{ cashu_mint_advertise_host
+                 if cashu_mint_advertise_host | length > 0
+                 else (ansible_host | default(inventory_hostname)) }}:{{ cashu_mint_port }}
+    cashu_mint_fips_url: >-
+      {{ ('http://[' ~ cashu_mint_fips_address ~ ']:' ~ cashu_mint_port)
+         if cashu_mint_fips_address | length > 0 else '' }}
+
+- name: Wait for the mint keys over IPv4
+  ansible.builtin.command:
+    argv:
+      - curl
+      - -fsS
+      - "http://127.0.0.1:{{ cashu_mint_port }}/v1/keys"
+  register: cashu_mint_ipv4_health
+  until: cashu_mint_ipv4_health.rc == 0
+  retries: 30
+  delay: 2
+  changed_when: false
+
+- name: Wait for the mint keys over FIPS/IPv6
+  ansible.builtin.command:
+    argv:
+      - curl
+      - -g
+      - -fsS
+      - -o
+      - /dev/null
+      - "http://[{{ cashu_mint_fips_address }}]:{{ cashu_mint_port }}/v1/keys"
+  register: cashu_mint_fips_health
+  until: cashu_mint_fips_health.rc == 0
+  retries: 20
+  delay: 2
+  changed_when: false
+  when:
+    - cashu_mint_fips_proxy | bool
+    - cashu_mint_fips_address | length > 0
+
+- name: Report the mint endpoints
+  ansible.builtin.debug:
+    msg:
+      ipv4: "{{ cashu_mint_ipv4_url }}"
+      fips: "{{ cashu_mint_fips_url | default('') }}"
+      advertised: "{{ cashu_mint_advertise_url | default('') }}"
+      service: "{{ cashu_mint_service_name }}.service"

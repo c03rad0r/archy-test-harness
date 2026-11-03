@@ -1,0 +1,18 @@
+[Unit]
+Description=Cashu test mint (cdk-mintd, IPv4)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ cashu_mint_user }}
+Group={{ cashu_mint_user }}
+WorkingDirectory={{ cashu_mint_data_dir }}
+EnvironmentFile={{ cashu_mint_data_dir }}/mint.env
+ExecStart={{ cashu_mint_binary }} --work-dir {{ cashu_mint_data_dir }} {{ cashu_mint_extra_args }}
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target

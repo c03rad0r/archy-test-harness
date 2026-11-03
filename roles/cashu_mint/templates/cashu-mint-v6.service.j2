@@ -1,0 +1,13 @@
+[Unit]
+Description=Cashu mint IPv6/FIPS front
+After=network-online.target {{ cashu_mint_service_name }}.service
+Wants=network-online.target {{ cashu_mint_service_name }}.service
+
+[Service]
+Type=simple
+ExecStart={{ cashu_mint_socat_bin }} TCP6-LISTEN:{{ cashu_mint_port }},ipv6only=1,fork,reuseaddr TCP4:127.0.0.1:{{ cashu_mint_port }}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

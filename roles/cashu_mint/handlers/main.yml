@@ -1,0 +1,12 @@
+---
+- name: Restart cashu mint
+  ansible.builtin.systemd:
+    name: "{{ cashu_mint_service_name }}"
+    state: restarted
+    daemon_reload: true
+
+- name: Restart cashu mint v6
+  ansible.builtin.systemd:
+    name: "{{ cashu_mint_v6_service_name }}"
+    state: restarted
+    daemon_reload: true

@@ -1,0 +1,22 @@
+[Unit]
+Description=Cashu test mint (Nutshell, IPv4)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ cashu_mint_user }}
+Group={{ cashu_mint_user }}
+Environment=XDG_RUNTIME_DIR=/run/user/{{ cashu_mint_uid }}
+ExecStartPre=-{{ cashu_mint_podman_bin }} rm -f {{ cashu_mint_container }}
+ExecStart={{ cashu_mint_podman_bin }} run --rm --name {{ cashu_mint_container }} \
+    --env-file={{ cashu_mint_data_dir }}/mint.env \
+    -p 0.0.0.0:{{ cashu_mint_port }}:{{ cashu_mint_port }} \
+    -v {{ cashu_mint_data_dir }}:/root/.cashu:Z \
+    {{ cashu_mint_image }} {{ cashu_mint_nutshell_command }}
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target

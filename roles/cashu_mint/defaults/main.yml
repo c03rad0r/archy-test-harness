@@ -1,0 +1,39 @@
+---
+# Cashu mint used by the test bench.
+#
+# The Nutshell instance on x280_test is the one the router already uses. Keep
+# its private key and data directory unchanged: changing either creates a new
+# keyset and makes the existing drain-journal tokens unspendable.
+
+cashu_mint_backend: nutshell
+cashu_mint_service_name: cashu-mint
+cashu_mint_v6_service_name: cashu-mint-v6
+cashu_mint_container: cashu-mint
+cashu_mint_user: archipelago
+cashu_mint_port: 3338
+cashu_mint_data_dir: /home/archipelago/nutshell-data
+cashu_mint_podman_bin: /usr/bin/podman
+cashu_mint_socat_bin: /usr/bin/socat
+
+cashu_mint_image: docker.io/cashubtc/nutshell:0.21.0
+cashu_mint_nutshell_command: poetry run mint
+# Existing test mint key. It is a lab key, not a production secret, and must
+# not change while old tokens are outstanding.
+cashu_mint_private_key: "7420c80177b152cb42f95c3dd4810adb"
+
+# cdk-mintd variant (production x280). The mnemonic is read from the existing
+# environment/data when this role is used there; leave it empty unless the
+# caller explicitly provides it.
+cashu_mint_binary: /home/c08r4d0r/cdk-mint/cdk-mintd
+cashu_mint_mnemonic: ""
+cashu_mint_manage_config: false
+cashu_mint_extra_args: ""
+
+cashu_mint_replace_legacy: false
+cashu_mint_legacy_container: nutshell
+
+cashu_mint_fips_proxy: true
+cashu_mint_fips_interface: fips0
+cashu_mint_fips_address: ""
+cashu_mint_advertise_host: ""
+cashu_mint_advertise_url: ""

@@ -1,0 +1,7 @@
+---
+- name: Cashu test mint (IPv4 + FIPS front)
+  hosts: "{{ target | default('x280_test') }}"
+  become: true
+  gather_facts: true
+  roles:
+    - role: cashu_mint
