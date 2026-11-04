@@ -17,9 +17,10 @@ cashu_mint_socat_bin: /usr/bin/socat
 
 cashu_mint_image: docker.io/cashubtc/nutshell:0.21.0
 cashu_mint_nutshell_command: poetry run mint
-# Existing test mint key. It is a lab key, not a production secret, and must
-# not change while old tokens are outstanding.
-cashu_mint_private_key: "7420c80177b152cb42f95c3dd4810adb"
+# Required only when creating a new Nutshell mint. Existing mints keep the key
+# in their 0600 mint.env file and this role never overwrites it with a blank.
+# Pass it via CASHU_MINT_PRIVATE_KEY / -e when first deploying a mint.
+cashu_mint_private_key: ""
 
 # cdk-mintd variant (production x280). The mnemonic is read from the existing
 # environment/data when this role is used there; leave it empty unless the

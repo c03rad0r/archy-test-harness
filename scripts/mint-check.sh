@@ -6,7 +6,7 @@
 #   MINT_HOST=192.168.50.166 MINT_FIPS=fd5d:... scripts/mint-check.sh
 set -euo pipefail
 
-HOST=${MINT_HOST:-192.168.50.199}
+HOST=${MINT_HOST:-192.168.50.166}
 PORT=${MINT_PORT:-3338}
 FIPS=${MINT_FIPS:-}
 SSH_TARGET=${MINT_SSH:-archipelago@${HOST}}

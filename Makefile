@@ -262,6 +262,7 @@ mint-deploy:
 	@$(ANSIBLE) -i "$(INVENTORY)" "$(REPO)/playbooks/mint.yml" \
 	  -e target="$(MINT_TARGET)" \
 	  -e cashu_mint_advertise_host="$(MINT_HOST)" \
+	  -e cashu_mint_private_key="$${CASHU_MINT_PRIVATE_KEY:-}" \
 	  -e cashu_mint_replace_legacy=true
 
 mint-check:

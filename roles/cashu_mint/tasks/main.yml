@@ -46,11 +46,17 @@
     group: "{{ cashu_mint_user }}"
     mode: "0750"
 
-- name: Check for an existing cdk-mintd environment file
+- name: Check for an existing mint environment file
   ansible.builtin.stat:
     path: "{{ cashu_mint_data_dir }}/mint.env"
   register: cashu_mint_env_file
-  when: cashu_mint_backend == 'cdk-mintd'
+
+- name: Require a Nutshell key when no environment file exists
+  ansible.builtin.assert:
+    that:
+      - cashu_mint_env_file.stat.exists or cashu_mint_private_key | length > 0
+    fail_msg: "Nutshell needs cashu_mint_private_key or an existing mint.env"
+  when: cashu_mint_backend == 'nutshell'
 
 - name: Write the Nutshell environment file
   ansible.builtin.copy:
@@ -64,7 +70,9 @@
       MINT_LISTEN_PORT={{ cashu_mint_port }}
       MINT_PRIVATE_KEY={{ cashu_mint_private_key }}
   no_log: true
-  when: cashu_mint_backend == 'nutshell'
+  when:
+    - cashu_mint_backend == 'nutshell'
+    - cashu_mint_private_key | length > 0
 
 - name: Write the cdk-mintd environment file
   ansible.builtin.copy:
