@@ -1021,6 +1021,157 @@ test('a reload resumes readiness until the mints advertise', async ({ page }) =>
   await expect(page.getByTestId('gateway-updated')).toContainText('Updated')
 })
 
+// The shapes observed after a vanilla reflash: the saved address is answered
+// by an unrelated HTTP-only host reached through the lab gateway, while the
+// real router sits on the USB NIC at 192.168.1.1.
+const PHANTOM_DISCOVERY = {
+  routers: [
+    {
+      ip: '192.168.2.1',
+      mac: '',
+      model: 'unknown',
+      identified: false,
+      ssh_open: false,
+      source: 'well-known router address',
+      active: true,
+      reachable: false,
+      on_link: false,
+      via: '192.168.50.1',
+      interface: 'enx9c69d3c70689',
+      link_type: 'ethernet',
+      has_saved_credentials: true,
+    },
+    {
+      ip: '192.168.1.1',
+      mac: '94:83:c4:8c:59:c3',
+      model: 'glinet,gl-mt3000',
+      name: 'GL-MT3000',
+      firmware: 'OpenWrt 25.12.5',
+      identified: true,
+      ssh_open: true,
+      password_status: 'not_required',
+      active: false,
+      reachable: true,
+      on_link: true,
+      via: '',
+      interface: 'enx6c6e0750cd79',
+      link_type: 'ethernet',
+      subnet: '192.168.1.0/24',
+      has_saved_credentials: false,
+    },
+  ],
+  active: '192.168.2.1',
+  active_address: '192.168.2.1',
+  active_reachable: false,
+  suggested: '192.168.1.1',
+}
+
+const MINIMAL_STATUS = {
+  host: '192.168.1.1',
+  hostname: 'OpenWrt',
+  wan: { configured: false, internet: false, ssid: '', ip: '', radio: '' },
+  tollgate: {
+    installed: false,
+    pinned_version: '0.6.0',
+    up_to_date: false,
+    version: '',
+    version_known: false,
+  },
+}
+
+async function mockDiscoveryAndStatus(
+  page: Page,
+  onSelectRouter?: (body: any) => unknown,
+) {
+  const selectCalls: any[] = []
+  await page.route('**/rpc/v1', async route => {
+    let body: any = {}
+    try {
+      body = route.request().postDataJSON()
+    } catch {
+      return route.continue()
+    }
+    const reply = (result: unknown) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: body?.id ?? 1,
+          result,
+          error: null,
+        }),
+      })
+    if (body?.method === 'openwrt.discover') return reply(PHANTOM_DISCOVERY)
+    if (body?.method === 'openwrt.get-status') return reply(MINIMAL_STATUS)
+    if (body?.method === 'openwrt.select-router') {
+      selectCalls.push(body?.params)
+      if (onSelectRouter) return reply(onSelectRouter(body))
+      return reply({
+        ok: false,
+        host: body?.params?.host,
+        needs_password: true,
+        needs_root_password: true,
+        bad_password: false,
+        error:
+          'This router has no root password yet. Vanilla OpenWrt accepts any password over Dropbear, but Archy needs a real one.',
+      })
+    }
+    return route.continue()
+  })
+  return { selectCalls }
+}
+
+test('a stale active address never auto-selects an unrelated HTTP host', async ({ page }) => {
+  await mockDiscoveryAndStatus(page)
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await expect(page.getByTestId('discovered-gateways')).toBeVisible({ timeout: 60_000 })
+  await dismissCompanionOverlay(page)
+
+  // The banner names the saved address and the router that was found instead.
+  const moved = page.getByTestId('router-moved')
+  await expect(moved).toBeVisible()
+  await expect(moved).toContainText('192.168.2.1')
+  await expect(moved).toContainText('192.168.1.1')
+
+  // Auto-selection must skip the non-SSH host even though it is `active`.
+  await expect(page.getByTestId('gateway-select')).toHaveValue('192.168.1.1')
+
+  // Off-link bystanders stay out of the default list.
+  const options = page.getByTestId('gateway-select').locator('option')
+  await expect(options.filter({ hasText: '192.168.2.1' })).toHaveCount(0)
+
+  // ...and appear, correctly labelled, behind the explicit toggle.
+  await page.getByTestId('show-unverified').check()
+  const phantom = options.filter({ hasText: '192.168.2.1' })
+  await expect(phantom).toHaveCount(1)
+  await expect(phantom).toContainText('via 192.168.50.1')
+
+  // A vanilla router is reported by the installer as needing a password, and
+  // the card names the command before the operator even clicks Connect.
+  await expect(page.getByTestId('no-root-password')).toBeVisible()
+  await expect(page.getByTestId('root-password-command')).toContainText(
+    'root@192.168.1.1',
+  )
+})
+
+test('the moved banner connects to the discovered router', async ({ page }) => {
+  const { selectCalls } = await mockDiscoveryAndStatus(page)
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await expect(page.getByTestId('router-moved')).toBeVisible({ timeout: 60_000 })
+  await dismissCompanionOverlay(page)
+
+  await page.getByTestId('router-moved-connect').click()
+
+  await expect.poll(() => selectCalls.map(call => call?.host)).toEqual([
+    '192.168.1.1',
+  ])
+  await expect(page.getByTestId('root-password-guidance')).toBeVisible()
+  await expect(page.getByTestId('root-password-command-connect')).toContainText(
+    'passwd root',
+  )
+})
+
 test('vanilla OpenWrt panel inspects the image and stays gated', async ({ page }) => {
   await forceGetStatus(page, result => {
     result.tollgate = {
