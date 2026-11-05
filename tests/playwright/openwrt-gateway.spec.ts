@@ -33,12 +33,33 @@ async function loginWithDeviceToken(context: BrowserContext, baseURL: string | u
   const body = await response.json()
   expect(body.error, JSON.stringify(body.error)).toBeNull()
 
-  await context.addInitScript(() => {
+  // The Remote Companion intro auto-pops ~7 s after load unless the stored
+  // marker matches the node's current APK build. Seed that marker so it
+  // cannot appear mid-test and intercept a click (the mesh-radio modal is
+  // handled separately by dismissCompanionOverlay).
+  let companionMarker = '1'
+  try {
+    const releaseUrl = new URL(
+      '/packages/archipelago-companion.json',
+      baseURL ?? 'http://192.168.50.199',
+    ).toString()
+    const release = await context.request.get(releaseUrl)
+    if (release.ok()) {
+      const meta = await release.json()
+      if (meta?.versionCode) companionMarker = `build:${meta.versionCode}`
+      else if (meta?.versionName) companionMarker = `version:${meta.versionName}`
+    }
+  } catch {
+    // No metadata: keep the default; the dismisser still closes the overlay.
+  }
+
+  await context.addInitScript((marker: string) => {
     localStorage.setItem('neode-auth', 'true')
     localStorage.setItem('neode_intro_seen', '1')
     localStorage.setItem('neode_onboarding_complete', '1')
+    localStorage.setItem('neode_companion_intro_seen', marker)
     localStorage.setItem('kiosk', 'false')
-  })
+  }, companionMarker)
 }
 
 async function dismissCompanionOverlay(page: Page) {
@@ -601,6 +622,11 @@ test('wallet status is explicit and a zero balance cannot be drained', async ({ 
   await connectLabGateway(page)
 
   const wallet = page.getByTestId('wallet-card')
+  // The wallet card lives inside the admin panel, which only exists after
+  // TollGate is installed. A freshly reflashed router has no wallet to show.
+  if (!(await wallet.count())) {
+    test.skip(true, 'router is vanilla: the wallet card appears after install')
+  }
   await expect(wallet).toBeVisible()
   await expect(wallet).toContainText(/Wallet ready|Wallet degraded/)
 
@@ -1000,6 +1026,12 @@ test('daemon startup is shown instead of wallet degraded', async ({ page }) => {
 })
 
 test('a reload resumes readiness until the mints advertise', async ({ page }) => {
+  // The page has already auto-connected in beforeEach. This test exercises the
+  // installed-daemon readiness poll; a vanilla router has no daemon to poll,
+  // and the status mock cannot manufacture the select path.
+  if (!(await page.getByTestId('tollgate-enabled').count())) {
+    test.skip(true, 'router is vanilla: readiness polling needs an installed daemon')
+  }
   const mints = [
     'https://mint.coinos.io',
     'https://mint.macadamia.cash',
