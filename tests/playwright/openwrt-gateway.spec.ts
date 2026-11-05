@@ -99,6 +99,14 @@ async function openGatewayPage(page: Page) {
     await page.waitForTimeout(1_500)
   }
   await dismissCompanionOverlay(page)
+  // Auto-connect runs after the discovery card paints. Give it time to
+  // confirm the saved router before any test touches the selector; a genuine
+  // discovery-only state falls through after the bounded wait.
+  const card = page.getByTestId('tollgate-card')
+  await expect
+    .poll(async () => card.isVisible().catch(() => false), { timeout: 20_000 })
+    .toBe(true)
+    .catch(() => {})
 }
 
 async function waitForTollgateOrPassword(page: Page) {
@@ -129,8 +137,12 @@ async function waitForTollgateOrPassword(page: Page) {
 async function connectLabGateway(page: Page) {
   // A MAC-confirmed saved router now connects on load. Do not touch the
   // selector in that case; doing so can re-trigger a connect with a stale
-  // host value.
+  // host value. Wait briefly because the connect is asynchronous.
   const card = page.getByTestId('tollgate-card')
+  await expect
+    .poll(async () => card.isVisible().catch(() => false), { timeout: 15_000 })
+    .toBe(true)
+    .catch(() => {})
   if (await card.isVisible().catch(() => false)) return
 
   const select = page.getByTestId('gateway-select')
