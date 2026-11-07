@@ -1351,6 +1351,10 @@ async function mockIdentityDiscovery(
       })
     if (body?.method === 'openwrt.discover') return reply(discovery)
     if (body?.method === 'openwrt.get-status') return reply(MINIMAL_STATUS)
+    if (body?.method === 'openwrt.installer.set-root-password') {
+      // Do not let a mocked first-connect test write a real password.
+      return reply({ ok: true, ip: body?.params?.host, password_status: 'accepted' })
+    }
     if (body?.method === 'openwrt.select-router') {
       selectCalls.push(body?.params)
       return reply(selectResult)
@@ -1408,9 +1412,8 @@ test('a not_required router shows one guidance block and never fires a blank con
     'passwd root',
   )
   await expect(page.getByTestId('password-input')).toBeVisible()
-  await expect(
-    page.getByRole('button', { name: 'Connect', exact: true }),
-  ).toBeDisabled()
+  await expect(page.getByTestId('connect-router')).toBeDisabled()
+  await expect(page.getByTestId('connect-router')).toContainText('Set password & connect')
   expect(selectCalls).toHaveLength(0)
 })
 
